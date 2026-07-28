@@ -60,6 +60,7 @@ Route::post('/register-customer', [CustomerRegistrationController::class, 'regis
 Route::post('/register-supplier', [SupplierRegistrationController::class, 'register']);
 
 // Public routes
+Route::get('/deals', [AdminController::class, 'publicDeals']);
 Route::post('/login', [AdminController::class, 'login']);
 Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
 
@@ -108,5 +109,7 @@ Route::prefix('admin')->group(function () {
     // PDFs
     Route::get('/pdfs',                            [AdminController::class, 'pdfs']);
     Route::post('/pdfs',                           [AdminController::class, 'uploadPdf']);
+    Route::post('/pdfs/reorder',                   [AdminController::class, 'reorderPdfs']);
+    Route::post('/pdfs/{id}',                      [AdminController::class, 'updatePdf']);
     Route::delete('/pdfs/{id}',                    [AdminController::class, 'deletePdf']);
 });
