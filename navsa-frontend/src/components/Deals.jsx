@@ -17,6 +17,30 @@
 
 // const API_BASE = import.meta.env.VITE_API_URL || '/api'
 // const PAGE_FLIP_SOUND = '/sounds/page-turn.mp3'
+// const MIN_MAGAZINE_ZOOM = 0.65
+// const MAX_MAGAZINE_ZOOM = 2
+// const MAGAZINE_ZOOM_STEP = 0.1
+// const pdfDocumentCache = new Map()
+
+// function getPdfDocument(url) {
+//   if (!pdfDocumentCache.has(url)) {
+//     const loadingTask = pdfjsLib.getDocument({
+//       url,
+//       withCredentials: false,
+//       disableAutoFetch: true,
+//       rangeChunkSize: 65536,
+//     })
+
+//     const promise = loadingTask.promise.catch((error) => {
+//       pdfDocumentCache.delete(url)
+//       throw error
+//     })
+
+//     pdfDocumentCache.set(url, promise)
+//   }
+
+//   return pdfDocumentCache.get(url)
+// }
 
 // function normalisePdfUrl(url) {
 //   if (!url) return ''
@@ -75,7 +99,10 @@
 // async function renderPageToCanvas(page, canvas, cssWidth, qualityMultiplier = 2.2) {
 //   const baseViewport = page.getViewport({ scale: 1 })
 //   const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2.5)
-//   const desiredPixels = Math.max(cssWidth * dpr * qualityMultiplier, 1200)
+//   const desiredPixels = Math.min(
+//     Math.max(cssWidth * dpr * qualityMultiplier, 900),
+//     4200,
+//   )
 //   const scale = desiredPixels / baseViewport.width
 //   const viewport = page.getViewport({ scale })
 //   const context = canvas.getContext('2d', { alpha: false })
@@ -101,31 +128,62 @@
 
 //   useEffect(() => {
 //     let cancelled = false
-//     let loadingTask = null
 //     let renderTask = null
+//     const cacheKey = `navsa-cover:${pdfUrl}`
+
+//     const drawCachedCover = async () => {
+//       try {
+//         const cached = window.sessionStorage.getItem(cacheKey)
+//         if (!cached || !canvasRef.current) return false
+
+//         const image = new Image()
+//         image.src = cached
+//         await image.decode()
+
+//         if (cancelled || !canvasRef.current) return true
+
+//         const canvas = canvasRef.current
+//         const context = canvas.getContext('2d', { alpha: false })
+//         canvas.width = image.naturalWidth
+//         canvas.height = image.naturalHeight
+//         context.drawImage(image, 0, 0)
+//         setStatus('ready')
+//         return true
+//       } catch {
+//         return false
+//       }
+//     }
 
 //     const load = async () => {
 //       setStatus('loading')
 
 //       try {
-//         loadingTask = pdfjsLib.getDocument({
-//           url: pdfUrl,
-//           withCredentials: false,
-//         })
+//         if (await drawCachedCover()) return
 
-//         const pdf = await loadingTask.promise
+//         const pdf = await getPdfDocument(pdfUrl)
 //         const page = await pdf.getPage(1)
 
 //         if (cancelled || !canvasRef.current) return
 
 //         const width = Math.max(
-//           520,
-//           canvasRef.current.parentElement?.clientWidth || 520,
+//           360,
+//           canvasRef.current.parentElement?.clientWidth || 420,
 //         )
 
-//         renderTask = await renderPageToCanvas(page, canvasRef.current, width, 1.7)
+//         renderTask = await renderPageToCanvas(page, canvasRef.current, width, 1.05)
 
-//         if (!cancelled) setStatus('ready')
+//         if (!cancelled && canvasRef.current) {
+//           setStatus('ready')
+
+//           try {
+//             const preview = canvasRef.current.toDataURL('image/webp', 0.82)
+//             if (preview.length < 1_800_000) {
+//               window.sessionStorage.setItem(cacheKey, preview)
+//             }
+//           } catch {
+//             // Browser storage may be disabled or full.
+//           }
+//         }
 //       } catch (error) {
 //         if (error?.name !== 'RenderingCancelledException') {
 //           console.error(`Unable to render first page of ${title}:`, error)
@@ -143,7 +201,6 @@
 //       } catch {
 //         // Rendering may already be complete.
 //       }
-//       loadingTask?.destroy?.().catch?.(() => {})
 //     }
 //   }, [pdfUrl, title])
 
@@ -160,9 +217,8 @@
 //         />
 
 //         {status === 'loading' && (
-//           <div className="deals-cover__loading" role="status">
+//           <div className="deals-cover__loading" role="status" aria-label="Loading catalogue cover">
 //             <span className="deals-spinner" />
-//             <span>Loading cover…</span>
 //           </div>
 //         )}
 
@@ -183,17 +239,18 @@
 // }
 
 // const MagazinePage = forwardRef(function MagazinePage(
-//   { pdf, pageNumber, pageWidth, pageHeight, zoom },
+//   { pdf, pageNumber, pageWidth, pageHeight, shouldRender },
 //   ref,
 // ) {
 //   const canvasRef = useRef(null)
-//   const [status, setStatus] = useState('loading')
+//   const [status, setStatus] = useState('idle')
 
 //   useEffect(() => {
 //     let cancelled = false
 //     let renderTask = null
 
 //     const render = async () => {
+//       if (!shouldRender) return
 //       setStatus('loading')
 
 //       try {
@@ -203,7 +260,7 @@
 //         renderTask = await renderPageToCanvas(
 //           page,
 //           canvasRef.current,
-//           pageWidth * zoom,
+//           pageWidth,
 //           1.25,
 //         )
 
@@ -226,7 +283,7 @@
 //         // Rendering may already be complete.
 //       }
 //     }
-//   }, [pageHeight, pageNumber, pageWidth, pdf, zoom])
+//   }, [pageHeight, pageNumber, pageWidth, pdf, shouldRender])
 
 //   return (
 //     <div
@@ -241,10 +298,9 @@
 //           aria-label={`Catalogue page ${pageNumber}`}
 //         />
 
-//         {status === 'loading' && (
-//           <div className="magazine-page__status">
-//             <span className="deals-spinner" />
-//             Rendering page {pageNumber}…
+//         {(status === 'idle' || status === 'loading') && (
+//           <div className="magazine-page__status" aria-label={`Preparing catalogue page ${pageNumber}`}>
+//             {status === 'loading' && <span className="deals-spinner" />}
 //           </div>
 //         )}
 
@@ -267,16 +323,19 @@
 //   const [zoom, setZoom] = useState(1)
 //   const [soundEnabled, setSoundEnabled] = useState(true)
 //   const [isFullscreen, setIsFullscreen] = useState(false)
+//   const [isFallbackFullscreen, setIsFallbackFullscreen] = useState(false)
 //   const [viewport, setViewport] = useState({ width: 1200, height: 760 })
+//   const [pageRatio, setPageRatio] = useState(1.414)
 
 //   const shellRef = useRef(null)
+//   const stageRef = useRef(null)
 //   const flipBookRef = useRef(null)
 //   const soundRef = useRef(null)
 
 //   useEffect(() => {
 //     soundRef.current = new Audio(PAGE_FLIP_SOUND)
 //     soundRef.current.preload = 'auto'
-//     soundRef.current.volume = 0.2
+//     soundRef.current.volume = 0.38
 
 //     return () => {
 //       soundRef.current?.pause?.()
@@ -300,21 +359,18 @@
 
 //   useEffect(() => {
 //     let cancelled = false
-//     let task = null
 
 //     const load = async () => {
 //       setLoadStatus('loading')
 
 //       try {
-//         task = pdfjsLib.getDocument({
-//           url: deal.pdfFile,
-//           withCredentials: false,
-//         })
-
-//         const loadedPdf = await task.promise
+//         const loadedPdf = await getPdfDocument(deal.pdfFile)
+//         const firstPage = await loadedPdf.getPage(1)
+//         const viewport = firstPage.getViewport({ scale: 1 })
 
 //         if (!cancelled) {
 //           setPdf(loadedPdf)
+//           setPageRatio(viewport.height / viewport.width)
 //           setCurrentPageIndex(0)
 //           setLoadStatus('ready')
 //         }
@@ -325,49 +381,123 @@
 //     }
 
 //     load()
-
-//     return () => {
-//       cancelled = true
-//       task?.destroy?.().catch?.(() => {})
-//     }
+//     return () => { cancelled = true }
 //   }, [deal])
 
 //   useEffect(() => {
+//     const stage = stageRef.current
+//     if (!stage) return undefined
+
 //     const updateViewport = () => {
-//       const width = Math.max(720, window.innerWidth - 96)
-//       const height = Math.max(560, window.innerHeight - 190)
-//       setViewport({ width, height })
+//       const rect = stage.getBoundingClientRect()
+//       setViewport({
+//         width: Math.max(1, Math.round(rect.width)),
+//         height: Math.max(1, Math.round(rect.height)),
+//       })
 //     }
 
 //     updateViewport()
-//     window.addEventListener('resize', updateViewport)
 
-//     return () => window.removeEventListener('resize', updateViewport)
-//   }, [])
+//     const observer = typeof ResizeObserver !== 'undefined'
+//       ? new ResizeObserver(updateViewport)
+//       : null
+
+//     observer?.observe(stage)
+//     window.addEventListener('resize', updateViewport)
+//     window.visualViewport?.addEventListener('resize', updateViewport)
+
+//     return () => {
+//       observer?.disconnect()
+//       window.removeEventListener('resize', updateViewport)
+//       window.visualViewport?.removeEventListener('resize', updateViewport)
+//     }
+//   }, [isFullscreen, isFallbackFullscreen, loadStatus])
 
 //   useEffect(() => {
 //     const onFullscreenChange = () => {
-//       setIsFullscreen(Boolean(document.fullscreenElement))
+//       const fullscreenElement = document.fullscreenElement
+//         || document.webkitFullscreenElement
+//       setIsFullscreen(fullscreenElement === shellRef.current)
 //     }
 
 //     document.addEventListener('fullscreenchange', onFullscreenChange)
-//     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+//     document.addEventListener('webkitfullscreenchange', onFullscreenChange)
+
+//     return () => {
+//       document.removeEventListener('fullscreenchange', onFullscreenChange)
+//       document.removeEventListener('webkitfullscreenchange', onFullscreenChange)
+//     }
 //   }, [])
 
-//   const pageSize = useMemo(() => {
-//     const availableWidth = Math.min(viewport.width, 1720)
-//     const availableHeight = Math.min(viewport.height, 1080)
+//   const fullscreenMode = isFullscreen || isFallbackFullscreen
+//   const singlePageMode = viewport.width <= 760 || viewport.height <= 560
 
-//     const widthFromSpread = availableWidth / 2.08
-//     const widthFromHeight = availableHeight * 0.72
-//     const baseWidth = Math.max(420, Math.min(widthFromSpread, widthFromHeight, 780))
-//     const width = Math.round(baseWidth * zoom)
-//     const height = Math.round(width * 1.414)
+//   const pageSize = useMemo(() => {
+//     const horizontalAllowance = singlePageMode
+//       ? 92
+//       : fullscreenMode
+//         ? 128
+//         : 146
+//     const verticalAllowance = singlePageMode ? 20 : fullscreenMode ? 12 : 24
+//     const availableWidth = Math.max(140, viewport.width - horizontalAllowance)
+//     const availableHeight = Math.max(180, viewport.height - verticalAllowance)
+
+//     const widthFromLayout = singlePageMode
+//       ? availableWidth
+//       : availableWidth / 2.015
+//     const widthFromHeight = availableHeight / pageRatio
+//     const maximumWidth = fullscreenMode ? 1100 : 900
+//     const fittedWidth = Math.max(
+//       140,
+//       Math.min(widthFromLayout, widthFromHeight, maximumWidth),
+//     )
+//     const width = Math.round(fittedWidth * zoom)
+//     const height = Math.round(width * pageRatio)
 
 //     return { width, height }
-//   }, [viewport, zoom])
+//   }, [fullscreenMode, pageRatio, singlePageMode, viewport, zoom])
 
 //   const pageCount = pdf?.numPages ?? 0
+
+//   const changeZoom = useCallback((nextZoom) => {
+//     setZoom((currentZoom) => {
+//       const resolvedZoom = typeof nextZoom === 'function'
+//         ? nextZoom(currentZoom)
+//         : nextZoom
+
+//       return Math.min(
+//         MAX_MAGAZINE_ZOOM,
+//         Math.max(MIN_MAGAZINE_ZOOM, Number(resolvedZoom.toFixed(2))),
+//       )
+//     })
+//   }, [])
+
+//   const zoomOut = useCallback(() => {
+//     changeZoom((value) => value - MAGAZINE_ZOOM_STEP)
+//   }, [changeZoom])
+
+//   const zoomIn = useCallback(() => {
+//     changeZoom((value) => value + MAGAZINE_ZOOM_STEP)
+//   }, [changeZoom])
+
+//   const resetZoom = useCallback(() => {
+//     changeZoom(1)
+//   }, [changeZoom])
+
+//   useEffect(() => {
+//     const frame = window.requestAnimationFrame(() => {
+//       const stage = stageRef.current
+//       if (!stage) return
+
+//       stage.scrollTo({
+//         left: Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2),
+//         top: Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2),
+//         behavior: 'auto',
+//       })
+//     })
+
+//     return () => window.cancelAnimationFrame(frame)
+//   }, [fullscreenMode, pageSize.height, pageSize.width, singlePageMode, zoom])
 
 //   const next = useCallback(() => {
 //     flipBookRef.current?.pageFlip?.().flipNext?.()
@@ -383,11 +513,50 @@
 //     setCurrentPageIndex(safeIndex)
 //   }, [pageCount])
 
+//   const closeViewer = useCallback(async () => {
+//     try {
+//       const fullscreenElement = document.fullscreenElement
+//         || document.webkitFullscreenElement
+//       const exitFullscreen = document.exitFullscreen
+//         || document.webkitExitFullscreen
+
+//       if (fullscreenElement === shellRef.current && exitFullscreen) {
+//         await exitFullscreen.call(document)
+//       }
+//     } catch (error) {
+//       console.warn('Fullscreen could not be closed cleanly:', error)
+//     } finally {
+//       setIsFallbackFullscreen(false)
+//       onClose()
+//     }
+//   }, [onClose])
+
 //   useEffect(() => {
 //     const onKeyDown = (event) => {
 //       if (event.key === 'Escape') {
-//         onClose()
+//         // Let the browser leave fullscreen first. A second Escape closes the viewer.
+//         if (isFullscreen) return
+//         if (isFallbackFullscreen) {
+//           setIsFallbackFullscreen(false)
+//           return
+//         }
+//         closeViewer()
 //         return
+//       }
+
+//       if (event.key === '+' || event.key === '=') {
+//         event.preventDefault()
+//         zoomIn()
+//       }
+
+//       if (event.key === '-') {
+//         event.preventDefault()
+//         zoomOut()
+//       }
+
+//       if (event.key === '0') {
+//         event.preventDefault()
+//         resetZoom()
 //       }
 
 //       if (event.key === 'ArrowRight' || event.key === 'PageDown') {
@@ -411,26 +580,42 @@
 //       }
 //     }
 
+//     const previousOverflow = document.body.style.overflow
 //     window.addEventListener('keydown', onKeyDown)
 //     document.body.style.overflow = 'hidden'
 
 //     return () => {
 //       window.removeEventListener('keydown', onKeyDown)
-//       document.body.style.overflow = ''
+//       document.body.style.overflow = previousOverflow
 //     }
-//   }, [goToPage, next, onClose, pageCount, previous])
+//   }, [closeViewer, goToPage, isFallbackFullscreen, isFullscreen, next, pageCount, previous, resetZoom, zoomIn, zoomOut])
 
-//   const toggleFullscreen = async () => {
+//   const toggleFullscreen = useCallback(async () => {
 //     try {
-//       if (!document.fullscreenElement) {
-//         await shellRef.current?.requestFullscreen?.()
+//       const shell = shellRef.current
+//       if (!shell) return
+
+//       const fullscreenElement = document.fullscreenElement
+//         || document.webkitFullscreenElement
+//       const requestFullscreen = shell.requestFullscreen
+//         || shell.webkitRequestFullscreen
+//       const exitFullscreen = document.exitFullscreen
+//         || document.webkitExitFullscreen
+
+//       if (fullscreenElement === shell) {
+//         await exitFullscreen?.call(document)
+//       } else if (isFallbackFullscreen) {
+//         setIsFallbackFullscreen(false)
+//       } else if (requestFullscreen) {
+//         await requestFullscreen.call(shell)
 //       } else {
-//         await document.exitFullscreen?.()
+//         // iPhone Safari and some in-app browsers do not expose the element fullscreen API.
+//         setIsFallbackFullscreen(true)
 //       }
 //     } catch (error) {
 //       console.warn('Fullscreen could not be opened:', error)
 //     }
-//   }
+//   }, [isFallbackFullscreen])
 
 //   const visibleLabel = useMemo(() => {
 //     if (!pageCount) return 'Opening catalogue…'
@@ -452,7 +637,12 @@
 //       aria-modal="true"
 //       aria-label={`${deal.title} magazine viewer`}
 //     >
-//       <div className="magazine-shell" ref={shellRef}>
+//       <div
+//         className={isFallbackFullscreen
+//           ? 'magazine-shell magazine-shell--fallback-fullscreen'
+//           : 'magazine-shell'}
+//         ref={shellRef}
+//       >
 //         <header className="magazine-toolbar">
 //           <div className="magazine-toolbar__title">
 //             <strong>{deal.title}</strong>
@@ -462,51 +652,86 @@
 //           <div className="magazine-toolbar__actions">
 //             <button
 //               type="button"
-//               onClick={() => setZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}
-//               title="Zoom out"
+//               className="magazine-back"
+//               onClick={closeViewer}
+//               aria-label="Back to homepage"
 //             >
-//               −
+//               <span className="magazine-control__desktop">← Back to Homepage</span>
+//               <span className="magazine-control__mobile">← Back</span>
 //             </button>
 
-//             <span className="magazine-zoom-label">{Math.round(zoom * 100)}%</span>
+//             <div className="magazine-zoom-controls" role="group" aria-label="Magazine zoom controls">
+//               <button
+//                 type="button"
+//                 onClick={zoomOut}
+//                 title="Zoom out"
+//                 aria-label="Zoom out"
+//                 disabled={zoom <= MIN_MAGAZINE_ZOOM}
+//               >
+//                 −
+//               </button>
+
+//               <button
+//                 type="button"
+//                 className="magazine-zoom-label"
+//                 onClick={resetZoom}
+//                 title="Reset zoom to fit"
+//                 aria-label={`Reset zoom. Current zoom ${Math.round(zoom * 100)} percent`}
+//               >
+//                 {Math.round(zoom * 100)}%
+//               </button>
+
+//               <button
+//                 type="button"
+//                 onClick={zoomIn}
+//                 title="Zoom in"
+//                 aria-label="Zoom in"
+//                 disabled={zoom >= MAX_MAGAZINE_ZOOM}
+//               >
+//                 +
+//               </button>
+//             </div>
 
 //             <button
 //               type="button"
-//               onClick={() => setZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))}
-//               title="Zoom in"
-//             >
-//               +
-//             </button>
-
-//             <button
-//               type="button"
-//               className={soundEnabled ? 'is-active' : ''}
+//               className={soundEnabled ? 'is-active magazine-sound' : 'magazine-sound'}
 //               onClick={() => {
 //                 setSoundEnabled((value) => !value)
 //                 if (!soundEnabled) {
 //                   window.setTimeout(playFlipSound, 0)
 //                 }
 //               }}
+//               aria-label={soundEnabled ? 'Turn page sound off' : 'Turn page sound on'}
 //             >
-//               {soundEnabled ? 'Sound: On' : 'Sound: Off'}
+//               <span className="magazine-control__desktop">{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
+//               <span className="magazine-control__mobile">{soundEnabled ? 'Sound On' : 'Sound Off'}</span>
 //             </button>
 
-//             <button type="button" onClick={toggleFullscreen}>
-//               {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+//             <button
+//               type="button"
+//               className="magazine-fullscreen"
+//               onClick={toggleFullscreen}
+//               aria-label={fullscreenMode ? 'Exit fullscreen' : 'Open fullscreen'}
+//             >
+//               <span className="magazine-control__desktop">{fullscreenMode ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+//               <span className="magazine-control__mobile">{fullscreenMode ? 'Exit Full' : 'Full'}</span>
 //             </button>
 
 //             <a
 //               href={deal.pdfFile}
 //               download
+//               className="magazine-download"
 //               onClick={(event) => event.stopPropagation()}
+//               aria-label="Download catalogue PDF"
 //             >
-//               Download PDF
+//               <span className="magazine-control__desktop">Download PDF</span>
+//               <span className="magazine-control__mobile">PDF</span>
 //             </a>
 
 //             <button
 //               type="button"
 //               className="magazine-close"
-//               onClick={onClose}
+//               onClick={closeViewer}
 //               aria-label="Close magazine"
 //             >
 //               ×
@@ -514,7 +739,7 @@
 //           </div>
 //         </header>
 
-//         <main className="magazine-stage">
+//         <main className="magazine-stage" ref={stageRef}>
 //           <button
 //             type="button"
 //             className="magazine-nav magazine-nav--previous"
@@ -528,7 +753,6 @@
 //           {loadStatus === 'loading' && (
 //             <div className="magazine-status">
 //               <span className="deals-spinner" />
-//               Loading high-quality magazine…
 //             </div>
 //           )}
 
@@ -542,25 +766,27 @@
 //             <div
 //               className={[
 //                 'magazine-book-wrap',
-//                 currentPageIndex === 0 ? 'magazine-book-wrap--front-cover' : '',
-//                 pageCount > 1 && currentPageIndex === pageCount - 1
+//                 !singlePageMode && currentPageIndex === 0
+//                   ? 'magazine-book-wrap--front-cover'
+//                   : '',
+//                 !singlePageMode && pageCount > 1 && currentPageIndex === pageCount - 1
 //                   ? 'magazine-book-wrap--back-cover'
 //                   : '',
 //               ].filter(Boolean).join(' ')}
 //               style={{ '--magazine-cover-shift': `${Math.round(pageSize.width / 2)}px` }}
 //             >
 //               <HTMLFlipBook
-//                 key={`${deal.id}-${pageSize.width}-${pageSize.height}`}
+//                 key={`${deal.id}-${pageSize.width}-${pageSize.height}-${singlePageMode ? 'single' : 'spread'}`}
 //                 ref={flipBookRef}
 //                 width={pageSize.width}
 //                 height={pageSize.height}
 //                 size="fixed"
-//                 minWidth={320}
-//                 maxWidth={980}
-//                 minHeight={452}
-//                 maxHeight={1386}
+//                 minWidth={140}
+//                 maxWidth={2200}
+//                 minHeight={198}
+//                 maxHeight={3300}
 //                 showCover
-//                 usePortrait={false}
+//                 usePortrait={singlePageMode}
 //                 mobileScrollSupport
 //                 clickEventForward
 //                 useMouseEvents
@@ -585,7 +811,10 @@
 //                     pageNumber={index + 1}
 //                     pageWidth={pageSize.width}
 //                     pageHeight={pageSize.height}
-//                     zoom={zoom}
+//                     shouldRender={
+//                       Math.abs(index - currentPageIndex) <= 3
+//                       || index <= 2
+//                     }
 //                   />
 //                 ))}
 //               </HTMLFlipBook>
@@ -604,8 +833,6 @@
 //         </main>
 
 //         <footer className="magazine-footer">
-//           <span>Drag page corners, swipe, use ← → keys, or drag the slider.</span>
-
 //           <input
 //             type="range"
 //             min="0"
@@ -618,7 +845,7 @@
 //             aria-label="Catalogue page position"
 //           />
 
-//           <span>
+//           <span className="magazine-page-count">
 //             {pageCount ? `${currentPageIndex + 1} / ${pageCount}` : '—'}
 //           </span>
 //         </footer>
@@ -782,6 +1009,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 const PAGE_FLIP_SOUND = '/sounds/page-turn.mp3'
+const MIN_MAGAZINE_ZOOM = 0.65
+const MAX_MAGAZINE_ZOOM = 2
+const MAGAZINE_ZOOM_STEP = 0.1
+const MIN_FULLSCREEN_TOUCHPAD_ZOOM = 1
+const MAX_FULLSCREEN_TOUCHPAD_ZOOM = 3
 const pdfDocumentCache = new Map()
 
 function getPdfDocument(url) {
@@ -861,7 +1093,10 @@ function normaliseDeals(payload) {
 async function renderPageToCanvas(page, canvas, cssWidth, qualityMultiplier = 2.2) {
   const baseViewport = page.getViewport({ scale: 1 })
   const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2.5)
-  const desiredPixels = Math.max(cssWidth * dpr * qualityMultiplier, 900)
+  const desiredPixels = Math.min(
+    Math.max(cssWidth * dpr * qualityMultiplier, 900),
+    4200,
+  )
   const scale = desiredPixels / baseViewport.width
   const viewport = page.getViewport({ scale })
   const context = canvas.getContext('2d', { alpha: false })
@@ -998,7 +1233,7 @@ function PdfCover({ pdfUrl, title }) {
 }
 
 const MagazinePage = forwardRef(function MagazinePage(
-  { pdf, pageNumber, pageWidth, pageHeight, zoom, shouldRender },
+  { pdf, pageNumber, pageWidth, pageHeight, shouldRender },
   ref,
 ) {
   const canvasRef = useRef(null)
@@ -1019,7 +1254,7 @@ const MagazinePage = forwardRef(function MagazinePage(
         renderTask = await renderPageToCanvas(
           page,
           canvasRef.current,
-          pageWidth * zoom,
+          pageWidth,
           1.25,
         )
 
@@ -1042,7 +1277,7 @@ const MagazinePage = forwardRef(function MagazinePage(
         // Rendering may already be complete.
       }
     }
-  }, [pageHeight, pageNumber, pageWidth, pdf, shouldRender, zoom])
+  }, [pageHeight, pageNumber, pageWidth, pdf, shouldRender])
 
   return (
     <div
@@ -1080,8 +1315,12 @@ function MagazineViewer({ deal, onClose }) {
   const [loadStatus, setLoadStatus] = useState('loading')
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [zoom, setZoom] = useState(1)
+  // Used only for touchpad pinch while fullscreen is active. Normal-mode
+  // browser zoom remains untouched and continues working exactly as before.
+  const [fullscreenTouchpadZoom, setFullscreenTouchpadZoom] = useState(1)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isFallbackFullscreen, setIsFallbackFullscreen] = useState(false)
   const [viewport, setViewport] = useState({ width: 1200, height: 760 })
   const [pageRatio, setPageRatio] = useState(1.414)
 
@@ -1089,6 +1328,8 @@ function MagazineViewer({ deal, onClose }) {
   const stageRef = useRef(null)
   const flipBookRef = useRef(null)
   const soundRef = useRef(null)
+  const fullscreenTouchpadZoomRef = useRef(1)
+  const fullscreenZoomAnchorRef = useRef(null)
 
   useEffect(() => {
     soundRef.current = new Audio(PAGE_FLIP_SOUND)
@@ -1149,51 +1390,238 @@ function MagazineViewer({ deal, onClose }) {
     const updateViewport = () => {
       const rect = stage.getBoundingClientRect()
       setViewport({
-        width: Math.max(640, rect.width),
-        height: Math.max(420, rect.height),
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
       })
     }
 
     updateViewport()
-    const observer = new ResizeObserver(updateViewport)
-    observer.observe(stage)
+
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateViewport)
+      : null
+
+    observer?.observe(stage)
     window.addEventListener('resize', updateViewport)
+    window.visualViewport?.addEventListener('resize', updateViewport)
 
     return () => {
-      observer.disconnect()
+      observer?.disconnect()
       window.removeEventListener('resize', updateViewport)
+      window.visualViewport?.removeEventListener('resize', updateViewport)
     }
-  }, [isFullscreen, loadStatus])
+  }, [isFullscreen, isFallbackFullscreen, loadStatus])
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
+      const fullscreenElement = document.fullscreenElement
+        || document.webkitFullscreenElement
+      setIsFullscreen(fullscreenElement === shellRef.current)
     }
 
     document.addEventListener('fullscreenchange', onFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange)
+    }
   }, [])
 
-  const pageSize = useMemo(() => {
-    const horizontalAllowance = isFullscreen ? 118 : 142
-    const verticalAllowance = isFullscreen ? 18 : 30
-    const availableWidth = Math.max(620, viewport.width - horizontalAllowance)
-    const availableHeight = Math.max(400, viewport.height - verticalAllowance)
+  const fullscreenMode = isFullscreen || isFallbackFullscreen
+  const singlePageMode = viewport.width <= 760 || viewport.height <= 560
 
-    const widthFromSpread = availableWidth / 2.015
+  const pageSize = useMemo(() => {
+    const horizontalAllowance = singlePageMode
+      ? 92
+      : fullscreenMode
+        ? 128
+        : 146
+    const verticalAllowance = singlePageMode ? 20 : fullscreenMode ? 12 : 24
+    const availableWidth = Math.max(140, viewport.width - horizontalAllowance)
+    const availableHeight = Math.max(180, viewport.height - verticalAllowance)
+
+    const widthFromLayout = singlePageMode
+      ? availableWidth
+      : availableWidth / 2.015
     const widthFromHeight = availableHeight / pageRatio
-    const maximumWidth = isFullscreen ? 1040 : 880
-    const baseWidth = Math.max(
-      320,
-      Math.min(widthFromSpread, widthFromHeight, maximumWidth),
+    const maximumWidth = fullscreenMode ? 1100 : 900
+    const fittedWidth = Math.max(
+      140,
+      Math.min(widthFromLayout, widthFromHeight, maximumWidth),
     )
-    const width = Math.round(baseWidth * zoom)
+    const width = Math.round(fittedWidth * zoom)
     const height = Math.round(width * pageRatio)
 
     return { width, height }
-  }, [isFullscreen, pageRatio, viewport, zoom])
+  }, [fullscreenMode, pageRatio, singlePageMode, viewport, zoom])
 
   const pageCount = pdf?.numPages ?? 0
+
+  const changeZoom = useCallback((nextZoom) => {
+    setZoom((currentZoom) => {
+      const resolvedZoom = typeof nextZoom === 'function'
+        ? nextZoom(currentZoom)
+        : nextZoom
+
+      return Math.min(
+        MAX_MAGAZINE_ZOOM,
+        Math.max(MIN_MAGAZINE_ZOOM, Number(resolvedZoom.toFixed(2))),
+      )
+    })
+  }, [])
+
+  const zoomOut = useCallback(() => {
+    changeZoom((value) => value - MAGAZINE_ZOOM_STEP)
+  }, [changeZoom])
+
+  const zoomIn = useCallback(() => {
+    changeZoom((value) => value + MAGAZINE_ZOOM_STEP)
+  }, [changeZoom])
+
+  const resetZoom = useCallback(() => {
+    changeZoom(1)
+  }, [changeZoom])
+
+  useEffect(() => {
+    fullscreenTouchpadZoomRef.current = fullscreenTouchpadZoom
+  }, [fullscreenTouchpadZoom])
+
+  // Outside fullscreen, the browser's original touchpad zoom behaviour is not
+  // intercepted. Inside fullscreen only, Chrome/Edge expose pinch as Ctrl+wheel
+  // (Safari may use Meta+wheel), so capture that gesture before page-flip sees it.
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage || !fullscreenMode) return undefined
+
+    let accumulatedDelta = 0
+    let zoomFrame = null
+    let latestPointer = null
+
+    const onFullscreenPinchWheel = (event) => {
+      if (!event.ctrlKey && !event.metaKey) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation?.()
+
+      const rect = stage.getBoundingClientRect()
+      latestPointer = {
+        localX: Math.min(stage.clientWidth, Math.max(0, event.clientX - rect.left)),
+        localY: Math.min(stage.clientHeight, Math.max(0, event.clientY - rect.top)),
+      }
+      accumulatedDelta += event.deltaY
+
+      if (zoomFrame !== null) return
+
+      zoomFrame = window.requestAnimationFrame(() => {
+        zoomFrame = null
+
+        const delta = Math.max(-180, Math.min(180, accumulatedDelta))
+        accumulatedDelta = 0
+        if (Math.abs(delta) < 0.01) return
+
+        const currentScale = fullscreenTouchpadZoomRef.current
+        const nextScale = Math.max(
+          MIN_FULLSCREEN_TOUCHPAD_ZOOM,
+          Math.min(
+            MAX_FULLSCREEN_TOUCHPAD_ZOOM,
+            Number((currentScale * Math.exp(-delta * 0.003)).toFixed(3)),
+          ),
+        )
+
+        if (Math.abs(nextScale - currentScale) < 0.001) return
+
+        const pointer = latestPointer || {
+          localX: stage.clientWidth / 2,
+          localY: stage.clientHeight / 2,
+        }
+
+        // Preserve the content point beneath the pointer while the fullscreen
+        // book is enlarged, matching the feel of normal browser pinch zoom.
+        fullscreenZoomAnchorRef.current = {
+          contentX: (stage.scrollLeft + pointer.localX) / currentScale,
+          contentY: (stage.scrollTop + pointer.localY) / currentScale,
+          localX: pointer.localX,
+          localY: pointer.localY,
+        }
+
+        fullscreenTouchpadZoomRef.current = nextScale
+        setFullscreenTouchpadZoom(nextScale)
+      })
+    }
+
+    stage.addEventListener('wheel', onFullscreenPinchWheel, {
+      passive: false,
+      capture: true,
+    })
+
+    return () => {
+      stage.removeEventListener('wheel', onFullscreenPinchWheel, true)
+      if (zoomFrame !== null) window.cancelAnimationFrame(zoomFrame)
+    }
+  }, [fullscreenMode])
+
+  useEffect(() => {
+    if (!fullscreenMode) return undefined
+
+    const anchor = fullscreenZoomAnchorRef.current
+    if (!anchor) return undefined
+
+    let innerFrame = null
+    const outerFrame = window.requestAnimationFrame(() => {
+      innerFrame = window.requestAnimationFrame(() => {
+        const stage = stageRef.current
+        if (!stage) return
+
+        const maximumLeft = Math.max(0, stage.scrollWidth - stage.clientWidth)
+        const maximumTop = Math.max(0, stage.scrollHeight - stage.clientHeight)
+
+        stage.scrollTo({
+          left: Math.min(
+            maximumLeft,
+            Math.max(0, anchor.contentX * fullscreenTouchpadZoom - anchor.localX),
+          ),
+          top: Math.min(
+            maximumTop,
+            Math.max(0, anchor.contentY * fullscreenTouchpadZoom - anchor.localY),
+          ),
+          behavior: 'auto',
+        })
+
+        fullscreenZoomAnchorRef.current = null
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(outerFrame)
+      if (innerFrame !== null) window.cancelAnimationFrame(innerFrame)
+    }
+  }, [fullscreenMode, fullscreenTouchpadZoom])
+
+  // Reset only the temporary fullscreen scale after exiting fullscreen.
+  useEffect(() => {
+    if (fullscreenMode) return
+
+    fullscreenZoomAnchorRef.current = null
+    fullscreenTouchpadZoomRef.current = 1
+    setFullscreenTouchpadZoom(1)
+  }, [fullscreenMode])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const stage = stageRef.current
+      if (!stage) return
+
+      stage.scrollTo({
+        left: Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2),
+        top: Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2),
+        behavior: 'auto',
+      })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [fullscreenMode, pageSize.height, pageSize.width, singlePageMode, zoom])
 
   const next = useCallback(() => {
     flipBookRef.current?.pageFlip?.().flipNext?.()
@@ -1209,11 +1637,50 @@ function MagazineViewer({ deal, onClose }) {
     setCurrentPageIndex(safeIndex)
   }, [pageCount])
 
+  const closeViewer = useCallback(async () => {
+    try {
+      const fullscreenElement = document.fullscreenElement
+        || document.webkitFullscreenElement
+      const exitFullscreen = document.exitFullscreen
+        || document.webkitExitFullscreen
+
+      if (fullscreenElement === shellRef.current && exitFullscreen) {
+        await exitFullscreen.call(document)
+      }
+    } catch (error) {
+      console.warn('Fullscreen could not be closed cleanly:', error)
+    } finally {
+      setIsFallbackFullscreen(false)
+      onClose()
+    }
+  }, [onClose])
+
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
-        onClose()
+        // Let the browser leave fullscreen first. A second Escape closes the viewer.
+        if (isFullscreen) return
+        if (isFallbackFullscreen) {
+          setIsFallbackFullscreen(false)
+          return
+        }
+        closeViewer()
         return
+      }
+
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        zoomIn()
+      }
+
+      if (event.key === '-') {
+        event.preventDefault()
+        zoomOut()
+      }
+
+      if (event.key === '0') {
+        event.preventDefault()
+        resetZoom()
       }
 
       if (event.key === 'ArrowRight' || event.key === 'PageDown') {
@@ -1237,26 +1704,42 @@ function MagazineViewer({ deal, onClose }) {
       }
     }
 
+    const previousOverflow = document.body.style.overflow
     window.addEventListener('keydown', onKeyDown)
     document.body.style.overflow = 'hidden'
 
     return () => {
       window.removeEventListener('keydown', onKeyDown)
-      document.body.style.overflow = ''
+      document.body.style.overflow = previousOverflow
     }
-  }, [goToPage, next, onClose, pageCount, previous])
+  }, [closeViewer, goToPage, isFallbackFullscreen, isFullscreen, next, pageCount, previous, resetZoom, zoomIn, zoomOut])
 
-  const toggleFullscreen = async () => {
+  const toggleFullscreen = useCallback(async () => {
     try {
-      if (!document.fullscreenElement) {
-        await shellRef.current?.requestFullscreen?.()
+      const shell = shellRef.current
+      if (!shell) return
+
+      const fullscreenElement = document.fullscreenElement
+        || document.webkitFullscreenElement
+      const requestFullscreen = shell.requestFullscreen
+        || shell.webkitRequestFullscreen
+      const exitFullscreen = document.exitFullscreen
+        || document.webkitExitFullscreen
+
+      if (fullscreenElement === shell) {
+        await exitFullscreen?.call(document)
+      } else if (isFallbackFullscreen) {
+        setIsFallbackFullscreen(false)
+      } else if (requestFullscreen) {
+        await requestFullscreen.call(shell)
       } else {
-        await document.exitFullscreen?.()
+        // iPhone Safari and some in-app browsers do not expose the element fullscreen API.
+        setIsFallbackFullscreen(true)
       }
     } catch (error) {
       console.warn('Fullscreen could not be opened:', error)
     }
-  }
+  }, [isFallbackFullscreen])
 
   const visibleLabel = useMemo(() => {
     if (!pageCount) return 'Opening catalogue…'
@@ -1278,7 +1761,12 @@ function MagazineViewer({ deal, onClose }) {
       aria-modal="true"
       aria-label={`${deal.title} magazine viewer`}
     >
-      <div className="magazine-shell" ref={shellRef}>
+      <div
+        className={isFallbackFullscreen
+          ? 'magazine-shell magazine-shell--fallback-fullscreen'
+          : 'magazine-shell'}
+        ref={shellRef}
+      >
         <header className="magazine-toolbar">
           <div className="magazine-toolbar__title">
             <strong>{deal.title}</strong>
@@ -1289,58 +1777,85 @@ function MagazineViewer({ deal, onClose }) {
             <button
               type="button"
               className="magazine-back"
-              onClick={onClose}
+              onClick={closeViewer}
+              aria-label="Back to homepage"
             >
-              ← Back to Homepage
+              <span className="magazine-control__desktop">← Back to Homepage</span>
+              <span className="magazine-control__mobile">← Back</span>
             </button>
+
+            <div className="magazine-zoom-controls" role="group" aria-label="Magazine zoom controls">
+              <button
+                type="button"
+                onClick={zoomOut}
+                title="Zoom out"
+                aria-label="Zoom out"
+                disabled={zoom <= MIN_MAGAZINE_ZOOM}
+              >
+                −
+              </button>
+
+              <button
+                type="button"
+                className="magazine-zoom-label"
+                onClick={resetZoom}
+                title="Reset zoom to fit"
+                aria-label={`Reset zoom. Current zoom ${Math.round(zoom * 100)} percent`}
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+
+              <button
+                type="button"
+                onClick={zoomIn}
+                title="Zoom in"
+                aria-label="Zoom in"
+                disabled={zoom >= MAX_MAGAZINE_ZOOM}
+              >
+                +
+              </button>
+            </div>
 
             <button
               type="button"
-              onClick={() => setZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}
-              title="Zoom out"
-            >
-              −
-            </button>
-
-            <span className="magazine-zoom-label">{Math.round(zoom * 100)}%</span>
-
-            <button
-              type="button"
-              onClick={() => setZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))}
-              title="Zoom in"
-            >
-              +
-            </button>
-
-            <button
-              type="button"
-              className={soundEnabled ? 'is-active' : ''}
+              className={soundEnabled ? 'is-active magazine-sound' : 'magazine-sound'}
               onClick={() => {
                 setSoundEnabled((value) => !value)
                 if (!soundEnabled) {
                   window.setTimeout(playFlipSound, 0)
                 }
               }}
+              aria-label={soundEnabled ? 'Turn page sound off' : 'Turn page sound on'}
             >
-              {soundEnabled ? 'Sound: On' : 'Sound: Off'}
+              <span className="magazine-control__desktop">{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
+              <span className="magazine-control__mobile">{soundEnabled ? 'Sound On' : 'Sound Off'}</span>
             </button>
 
-            <button type="button" onClick={toggleFullscreen}>
-              {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            <button
+              type="button"
+              className="magazine-fullscreen"
+              onClick={toggleFullscreen}
+              aria-label={fullscreenMode ? 'Exit fullscreen' : 'Open fullscreen'}
+            >
+              <span className="magazine-control__desktop">{fullscreenMode ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+              <span className="magazine-control__mobile">{fullscreenMode ? 'Exit Full' : 'Full'}</span>
             </button>
 
             <a
               href={deal.pdfFile}
               download
+              className="magazine-download"
               onClick={(event) => event.stopPropagation()}
+              aria-label="Download catalogue PDF"
             >
-              Download PDF
+              <span className="magazine-control__desktop">Download PDF</span>
+              <span className="magazine-control__mobile">PDF</span>
             </a>
 
             <button
               type="button"
               className="magazine-close"
-              onClick={onClose}
+              onClick={closeViewer}
               aria-label="Close magazine"
             >
               ×
@@ -1375,25 +1890,32 @@ function MagazineViewer({ deal, onClose }) {
             <div
               className={[
                 'magazine-book-wrap',
-                currentPageIndex === 0 ? 'magazine-book-wrap--front-cover' : '',
-                pageCount > 1 && currentPageIndex === pageCount - 1
+                !singlePageMode && currentPageIndex === 0
+                  ? 'magazine-book-wrap--front-cover'
+                  : '',
+                !singlePageMode && pageCount > 1 && currentPageIndex === pageCount - 1
                   ? 'magazine-book-wrap--back-cover'
                   : '',
               ].filter(Boolean).join(' ')}
-              style={{ '--magazine-cover-shift': `${Math.round(pageSize.width / 2)}px` }}
+              style={{
+                '--magazine-cover-shift': `${Math.round(pageSize.width / 2)}px`,
+                // CSS zoom changes the fullscreen scrollable layout without
+                // rebuilding HTMLFlipBook, so the open pages cannot change.
+                zoom: fullscreenMode ? fullscreenTouchpadZoom : 1,
+              }}
             >
               <HTMLFlipBook
-                key={`${deal.id}-${pageSize.width}-${pageSize.height}`}
+                key={`${deal.id}-${pageSize.width}-${pageSize.height}-${singlePageMode ? 'single' : 'spread'}`}
                 ref={flipBookRef}
                 width={pageSize.width}
                 height={pageSize.height}
                 size="fixed"
-                minWidth={320}
-                maxWidth={1200}
-                minHeight={452}
-                maxHeight={1800}
+                minWidth={140}
+                maxWidth={2200}
+                minHeight={198}
+                maxHeight={3300}
                 showCover
-                usePortrait={false}
+                usePortrait={singlePageMode}
                 mobileScrollSupport
                 clickEventForward
                 useMouseEvents
@@ -1418,7 +1940,6 @@ function MagazineViewer({ deal, onClose }) {
                     pageNumber={index + 1}
                     pageWidth={pageSize.width}
                     pageHeight={pageSize.height}
-                    zoom={zoom}
                     shouldRender={
                       Math.abs(index - currentPageIndex) <= 3
                       || index <= 2
