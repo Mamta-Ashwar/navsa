@@ -773,12 +773,10 @@ import {
 } from 'react'
 import HTMLFlipBook from 'react-pageflip'
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import './Deals.css'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 const PAGE_FLIP_SOUND = '/sounds/page-turn.mp3'
