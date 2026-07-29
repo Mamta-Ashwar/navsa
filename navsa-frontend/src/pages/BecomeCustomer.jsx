@@ -139,17 +139,21 @@ function BecomeCustomer() {
       const response = await fetch(`${BASE}/register-customer`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify(formData)
       });
       
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Registration failed. Please check your inputs.');
+        throw new Error(data.message || 'Registration failed. Please check your inputs.');
       }
       setStatus('success');
     } catch (error) {
       console.error('Error submitting form:', error);
+      alert(error.message);
       setStatus('error');
     }
   };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ProductCard from '../components/ProductCard'
+import { getProductImageUrl } from '../utils/imageHelper'
 import './Shop.css'
 
 function normaliseProducts(payload) {
@@ -11,7 +12,7 @@ function normaliseProducts(payload) {
 }
 
 function productImage(product) {
-  return product?.web_image ? `/products/${product.web_image}` : ''
+  return getProductImageUrl(product?.web_image)
 }
 
 function Shop() {
@@ -39,7 +40,8 @@ function Shop() {
     setLoading(true)
 
     try {
-      let url = `/api/products?page=${page}`
+      const BASE = import.meta.env.VITE_API_URL || '/api'
+      let url = `${BASE}/products?page=${page}`
       if (categoryFilter) url += `&category=${encodeURIComponent(categoryFilter)}`
       if (brandFilter) url += `&brand=${encodeURIComponent(brandFilter)}`
       if (offerFilter === 'daily' || offerFilter === '1') url += `&is_offer=1`
@@ -49,7 +51,7 @@ function Shop() {
         url += `&search=${encodeURIComponent(searchValue.trim())}`
       }
 
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: { 'Accept': 'application/json' } })
       if (!response.ok) throw new Error(`Products request failed: ${response.status}`)
       const data = await response.json()
 

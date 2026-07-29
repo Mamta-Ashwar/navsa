@@ -1182,8 +1182,10 @@ import './ProductCard.css'
 import NoticeModal from './NoticeModal'
 import './ProductCardFinal.css'
 
+import { getProductImageUrl } from '../utils/imageHelper'
+
 function getImage(product) {
-  return product?.web_image ? `/products/${product.web_image}` : ''
+  return getProductImageUrl(product?.web_image)
 }
 
 function getStorageType(product) {

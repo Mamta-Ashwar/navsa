@@ -164,7 +164,8 @@ function AdminLogin({ onLogin }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/login', {
+      const BASE = import.meta.env.VITE_API_URL || '/api';
+      const res = await fetch(`${BASE}/login`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

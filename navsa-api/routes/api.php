@@ -62,6 +62,9 @@ Route::post('/register-supplier', [SupplierRegistrationController::class, 'regis
 // Public routes
 Route::get('/deals', [AdminController::class, 'publicDeals']);
 Route::post('/login', [AdminController::class, 'login']);
+Route::match(['get', 'options'], '/login', function() {
+    return response()->json(['message' => 'Login requires a POST request.'], 405);
+});
 Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
 
 // ── Admin Routes (protected by X-Admin-Key: navsa2024 header) ─────────────

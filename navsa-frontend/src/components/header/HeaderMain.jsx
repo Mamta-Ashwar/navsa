@@ -219,9 +219,13 @@ export default function HeaderMain() {
       setSuggestionsLoading(true)
 
       try {
+        const BASE = import.meta.env.VITE_API_URL || '/api'
         const response = await fetch(
-          `/api/products?search=${encodeURIComponent(value)}&page=1`,
-          { signal: controller.signal }
+          `${BASE}/products?search=${encodeURIComponent(value)}&page=1`,
+          { 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+          }
         )
 
         if (!response.ok) {

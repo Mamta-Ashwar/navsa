@@ -121,8 +121,8 @@ const KEY = import.meta.env.VITE_ADMIN_KEY || 'navsa2024'
 
 const headers = () => ({
   'Content-Type': 'application/json',
+  'Accept': 'application/json',
   'X-Admin-Key': KEY,
-  Accept: 'application/json',
 })
 
 async function readResponse(res) {

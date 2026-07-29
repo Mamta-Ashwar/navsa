@@ -116,17 +116,21 @@ function BecomeSupplier() {
       const response = await fetch(`${BASE}/register-supplier`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify(submissionData)
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Supplier registration failed.');
+        throw new Error(data.message || 'Supplier registration failed.');
       }
       setStatus('success');
     } catch (error) {
       console.error('Error submitting supplier form:', error);
+      alert(error.message);
       setStatus('error');
     }
   };

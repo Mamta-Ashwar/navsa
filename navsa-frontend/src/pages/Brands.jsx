@@ -42,7 +42,8 @@ function Brands() {
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/brands")
+    const BASE = import.meta.env.VITE_API_URL || '/api';
+    fetch(`${BASE}/brands`, { headers: { 'Accept': 'application/json' } })
       .then(r => r.json())
       .then(data => {
         setBrands(data);

@@ -10,6 +10,7 @@ import {
   getPorts,
 } from '../services/shippingService'
 import NoticeModal from '../components/NoticeModal'
+import { getProductImageUrl } from '../utils/imageHelper'
 import './ProductDetail.css'
 
 
@@ -149,9 +150,8 @@ export default function ProductDetail() {
 
   useEffect(() => {
     setLoading(true)
-    setError(null)
-
-    fetch(`/api/products/${id}`)
+    const BASE = import.meta.env.VITE_API_URL || '/api'
+    fetch(`${BASE}/products/${id}`, { headers: { 'Accept': 'application/json' } })
       .then(response => {
         if (!response.ok) {
           throw new Error('Product not found')
@@ -311,9 +311,7 @@ export default function ProductDetail() {
     unitsPerCase
 
   const productStorageType = getStorageType(product)
-  const productImage = product.web_image
-    ? `/products/${product.web_image}`
-    : ''
+  const productImage = getProductImageUrl(product.web_image)
 
   const currentContainer = shipping?.container
 

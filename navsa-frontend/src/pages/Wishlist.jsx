@@ -43,10 +43,11 @@ export default function Wishlist() {
       setLoading(true)
 
       try {
+        const BASE = import.meta.env.VITE_API_URL || '/api'
         const hydrated = await Promise.all(
           wishlistItems.map(async item => {
             try {
-              const response = await fetch(`/api/products/${item.id}`, {
+              const response = await fetch(`${BASE}/products/${item.id}`, {
                 headers: { Accept: 'application/json' },
               })
 
