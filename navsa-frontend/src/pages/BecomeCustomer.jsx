@@ -179,7 +179,7 @@ function BecomeCustomer() {
             <ul className="criteria-list">
               <li>• UK companies <strong>must be VAT registered</strong></li>
               <li>• Your business is <strong>registered at a commercial property</strong>, not a home address</li>
-              <li>• Our minimum order is <strong>£5,000 for UK & Europe, £10,000 for ROW</strong></li>
+              <li>• Our minimum order is <strong>£5,000.00 for UK & Europe, £10,000.00 for ROW</strong></li>
               <li>• You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
             </ul>
           </div>
@@ -287,8 +287,8 @@ function BecomeCustomer() {
               <select name="trading_years" required value={formData.trading_years} onChange={handleChange} style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}>
                 <option value="">- Select -</option>
                 <option value="0-1">0-1</option>
-                <option value="1-3">1-3</option>
-                <option value="3-5">3-5</option>
+                <option value="1-2">1-2</option>
+                <option value="2-5">2-5</option>
                 <option value="5+">5+</option>
               </select>
             </div>

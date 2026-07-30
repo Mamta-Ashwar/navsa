@@ -8,6 +8,7 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\User;
 use App\Models\Pdf;
+use App\Models\HomeBanner;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
@@ -430,6 +431,238 @@ class AdminController extends Controller
         if (!$this->auth($request)) return $this->deny();
         Category::findOrFail($id)->delete();
         return response()->json(['id' => $id, 'destroyed' => true]);
+    }
+
+
+    // ── Homepage Banners ───────────────────────────────────────────────────────
+
+    private function normaliseBannerSortOrder(?string $position = null): void
+    {
+        $positions = $position ? [$position] : ['hero', 'middle', 'bottom'];
+
+        foreach ($positions as $currentPosition) {
+            $ids = HomeBanner::query()
+                ->where('position', $currentPosition)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->pluck('id');
+
+            foreach ($ids as $index => $id) {
+                HomeBanner::whereKey($id)->update(['sort_order' => $index + 1]);
+            }
+        }
+    }
+
+    private function deleteManagedBannerImage(?string $path): void
+    {
+        if (!$path || str_starts_with($path, '/') || preg_match('/^https?:\/\//i', $path)) {
+            return;
+        }
+
+        Storage::disk('public')->delete($path);
+    }
+
+    public function publicHomeBanners(Request $request)
+    {
+        $position = $request->query('position');
+
+        if ($position !== null && !in_array($position, ['hero', 'middle', 'bottom'], true)) {
+            return response()->json(['error' => 'Invalid banner position.'], 422);
+        }
+
+        $query = HomeBanner::query()
+            ->with('brand:id,brand_name')
+            ->where('is_active', true);
+
+        if ($position) {
+            $query->where('position', $position);
+        }
+
+        return response()->json(
+            $query
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get()
+        );
+    }
+
+    public function banners(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $position = $request->query('position');
+
+        if ($position !== null && !in_array($position, ['hero', 'middle', 'bottom'], true)) {
+            return response()->json(['error' => 'Invalid banner position.'], 422);
+        }
+
+        $query = HomeBanner::query()->with('brand:id,brand_name');
+
+        if ($position) {
+            $query->where('position', $position);
+        }
+
+        return response()->json(
+            $query
+                ->orderByRaw("FIELD(position, 'hero', 'middle', 'bottom')")
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get()
+        );
+    }
+
+    public function uploadBanner(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $request->validate([
+            'position' => 'required|in:hero,middle,bottom',
+            'brand_id' => 'nullable|integer|exists:brands,id',
+            'link_url' => 'nullable|string|max:2048',
+            'button_text' => 'nullable|string|max:80',
+            'overlay_position' => 'required|in:left,center,right',
+            'is_active' => 'nullable|boolean',
+            'image' => 'required|image|mimes:jpeg,jpg,png,webp|max:10240',
+        ]);
+
+        $path = $request->file('image')->store('banners/' . $validated['position'], 'public');
+        $nextOrder = ((int) HomeBanner::where('position', $validated['position'])->max('sort_order')) + 1;
+
+        $banner = HomeBanner::create([
+            'position' => $validated['position'],
+            'brand_id' => $validated['brand_id'] ?? null,
+            'image_path' => $path,
+            'link_url' => trim($validated['link_url'] ?? '') ?: null,
+            'button_text' => trim($validated['button_text'] ?? '') ?: null,
+            'overlay_position' => $validated['overlay_position'],
+            'sort_order' => $nextOrder,
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        $this->normaliseBannerSortOrder($banner->position);
+
+        return response()->json($banner->fresh()->load('brand:id,brand_name'), 201);
+    }
+
+    public function updateBanner(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $banner = HomeBanner::findOrFail($id);
+        $oldPosition = $banner->position;
+
+        $validated = $request->validate([
+            'position' => 'sometimes|required|in:hero,middle,bottom',
+            'brand_id' => 'nullable|integer|exists:brands,id',
+            'link_url' => 'nullable|string|max:2048',
+            'button_text' => 'nullable|string|max:80',
+            'overlay_position' => 'sometimes|required|in:left,center,right',
+            'is_active' => 'nullable|boolean',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+        ]);
+
+        $nextPosition = $validated['position'] ?? $banner->position;
+        $data = [];
+
+        if (array_key_exists('position', $validated)) {
+            $data['position'] = $nextPosition;
+        }
+        if ($request->has('brand_id')) {
+            $data['brand_id'] = $validated['brand_id'] ?? null;
+        }
+        if ($request->has('link_url')) {
+            $data['link_url'] = trim($validated['link_url'] ?? '') ?: null;
+        }
+        if ($request->has('button_text')) {
+            $data['button_text'] = trim($validated['button_text'] ?? '') ?: null;
+        }
+        if (array_key_exists('overlay_position', $validated)) {
+            $data['overlay_position'] = $validated['overlay_position'];
+        }
+        if ($request->has('is_active')) {
+            $data['is_active'] = $request->boolean('is_active');
+        }
+
+        if ($nextPosition !== $oldPosition) {
+            $data['sort_order'] = ((int) HomeBanner::where('position', $nextPosition)->max('sort_order')) + 1;
+        }
+
+        if ($request->hasFile('image')) {
+            $newPath = $request->file('image')->store('banners/' . $nextPosition, 'public');
+            $this->deleteManagedBannerImage($banner->image_path);
+            $data['image_path'] = $newPath;
+        }
+
+        $banner->update($data);
+
+        $this->normaliseBannerSortOrder($oldPosition);
+        if ($nextPosition !== $oldPosition) {
+            $this->normaliseBannerSortOrder($nextPosition);
+        }
+
+        return response()->json($banner->fresh()->load('brand:id,brand_name'));
+    }
+
+    public function reorderBanners(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $request->validate([
+            'position' => 'required|in:hero,middle,bottom',
+            'ids' => 'required|array',
+            'ids.*' => 'required|integer|distinct|exists:home_banners,id',
+        ]);
+
+        $existingIds = HomeBanner::where('position', $validated['position'])
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $submittedIds = collect($validated['ids'])
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($existingIds !== $submittedIds) {
+            return response()->json([
+                'error' => 'The reorder list must contain every banner from this section exactly once.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['ids'] as $index => $id) {
+                HomeBanner::whereKey($id)
+                    ->where('position', $validated['position'])
+                    ->update(['sort_order' => $index + 1]);
+            }
+        });
+
+        return response()->json([
+            'banners' => HomeBanner::with('brand:id,brand_name')
+                ->where('position', $validated['position'])
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get(),
+        ]);
+    }
+
+    public function deleteBanner(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $banner = HomeBanner::findOrFail($id);
+        $position = $banner->position;
+
+        $this->deleteManagedBannerImage($banner->image_path);
+        $banner->delete();
+        $this->normaliseBannerSortOrder($position);
+
+        return response()->json(['id' => (int) $id, 'destroyed' => true]);
     }
 
     // ── PDFs ──────────────────────────────────────────────────────────────────

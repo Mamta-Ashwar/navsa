@@ -61,6 +61,7 @@ Route::post('/register-supplier', [SupplierRegistrationController::class, 'regis
 
 // Public routes
 Route::get('/deals', [AdminController::class, 'publicDeals']);
+Route::get('/home-banners', [AdminController::class, 'publicHomeBanners']);
 Route::post('/login', [AdminController::class, 'login']);
 Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
 
@@ -105,6 +106,14 @@ Route::prefix('admin')->group(function () {
     Route::put('/categories/{id}',                 [AdminController::class, 'updateCategory']);
     Route::patch('/categories/{id}/soft-delete',   [AdminController::class, 'softDeleteCategory']);
     Route::delete('/categories/{id}',              [AdminController::class, 'hardDeleteCategory']);
+
+
+    // Homepage banners
+    Route::get('/banners',                         [AdminController::class, 'banners']);
+    Route::post('/banners',                        [AdminController::class, 'uploadBanner']);
+    Route::post('/banners/reorder',                [AdminController::class, 'reorderBanners']);
+    Route::post('/banners/{id}',                   [AdminController::class, 'updateBanner']);
+    Route::delete('/banners/{id}',                 [AdminController::class, 'deleteBanner']);
 
     // PDFs
     Route::get('/pdfs',                            [AdminController::class, 'pdfs']);
