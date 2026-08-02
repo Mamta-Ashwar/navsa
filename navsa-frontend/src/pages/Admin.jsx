@@ -10,7 +10,6 @@
 // import AdminRegistrations from './admin/AdminRegistrations';
 // import AdminPdfs from './admin/AdminPdfs';
 
-// // Temporary bypass for login as requested
 // function AdminShell({ onLogout }) {
 //   const location = useLocation();
 //   const [profileOpen, setProfileOpen] = useState(false);
@@ -19,7 +18,7 @@
 
 //   return (
 //     <div className="admin-layout admin-bg">
-//       {/* Sidebar */}
+
 //       <aside className="admin-sidebar glass-panel" style={{ borderRadius: 0, borderTop: 'none', borderBottom: 'none', borderLeft: 'none' }}>
 //         <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '1rem' }}>
 //           <h2 style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -43,6 +42,9 @@
 //           <NavLink to="/admin/users" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
 //             <Users size={20} /> Customers
 //           </NavLink>
+//           <NavLink to="/admin/suppliers" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+//             <Building2 size={20} /> Suppliers
+//           </NavLink>
 //           <NavLink to="/admin/brands" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
 //             <Settings size={20} /> Brands
 //           </NavLink>
@@ -50,7 +52,7 @@
 //             <Settings size={20} /> Categories
 //           </NavLink>
 //           <NavLink to="/admin/pdfs" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
-//             <Package size={20} /> PDFs & Manuals
+//             <Package size={20} /> PDFs & Banners
 //           </NavLink>
 //         </nav>
 
@@ -61,13 +63,12 @@
 //         </div>
 //       </aside>
 
-//         {/* Main Content */}
 //       <main className="admin-main-content">
-//         {/* Topbar */}
+
 //         <header className="glass-header admin-flex-between" style={{ padding: '1rem 2rem', position: 'relative' }}>
 //           <div />
 //           <div className="admin-flex-center" style={{ gap: '1rem', position: 'relative' }}>
-//             {/* Profile Avatar Button */}
+
 //             <button
 //               onClick={() => setProfileOpen(o => !o)}
 //               style={{
@@ -91,7 +92,6 @@
 //               <ChevronDown size={14} style={{ color: '#94a3b8', marginLeft: '2px', transform: profileOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
 //             </button>
 
-//             {/* Dropdown */}
 //             {profileOpen && (
 //               <div style={{
 //                 position: 'absolute', top: 'calc(100% + 8px)', right: 0,
@@ -99,7 +99,7 @@
 //                 borderRadius: '12px', padding: '12px', minWidth: '240px',
 //                 boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 1000
 //               }}>
-//                 {/* Profile header */}
+
 //                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
 //                   <div style={{
 //                     width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0,
@@ -117,7 +117,7 @@
 //                     </div>
 //                   </div>
 //                 </div>
-//                 {/* Logout */}
+
 //                 <button
 //                   onClick={() => { setProfileOpen(false); onLogout(); }}
 //                   style={{
@@ -134,7 +134,6 @@
 //           </div>
 //         </header>
 
-//         {/* Page Content */}
 //         <div className="admin-page-content">
 //           <Routes>
 //             <Route path="/" element={<Navigate to="dashboard" replace />} />
@@ -143,6 +142,7 @@
 //             <Route path="offers" element={<AdminOffers />} />
 //             <Route path="registrations" element={<AdminRegistrations />} />
 //             <Route path="users" element={<AdminUsers />} />
+//             <Route path="suppliers" element={<AdminSuppliers />} />
 //             <Route path="brands" element={<AdminBrands />} />
 //             <Route path="categories" element={<AdminCategories />} />
 //             <Route path="pdfs" element={<AdminPdfs />} />
@@ -166,13 +166,13 @@
 //     try {
 //       const res = await fetch('/api/login', {
 //         method: 'POST',
-//         headers: { 
+//         headers: {
 //           'Content-Type': 'application/json',
 //           'Accept': 'application/json'
 //         },
 //         body: JSON.stringify({ email, password }),
 //       });
-      
+
 //       const contentType = res.headers.get('content-type');
 //       if (!contentType || !contentType.includes('application/json')) {
 //         throw new Error('Server returned invalid response. Please check server logs.');
@@ -212,12 +212,12 @@
 //           </button>
 //         </form>
 
-//         <div style={{ 
-//           marginTop: '20px', 
-//           padding: '12px', 
-//           background: 'rgba(255,255,255,0.05)', 
-//           border: '1px dashed rgba(255,255,255,0.15)', 
-//           borderRadius: '6px', 
+//         <div style={{
+//           marginTop: '20px',
+//           padding: '12px',
+//           background: 'rgba(255,255,255,0.05)',
+//           border: '1px dashed rgba(255,255,255,0.15)',
+//           borderRadius: '6px',
 //           fontSize: '12px',
 //           color: '#94a3b8',
 //           display: 'flex',
@@ -226,7 +226,7 @@
 //         }}>
 //           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 //             <strong>Demo Credentials:</strong>
-//             <button 
+//             <button
 //               type="button"
 //               onClick={() => {
 //                 setEmail('admin@navsainternational.com');
@@ -264,9 +264,10 @@
 
 import { useState } from 'react';
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Tag, Users, Settings, LogOut, Lock, UserCheck, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Package, Tag, Users, Settings, LogOut, Lock, UserCheck, ChevronDown, Building2 } from 'lucide-react';
 import AdminDashboard  from './admin/AdminDashboard';
 import AdminUsers      from './admin/AdminUsers';
+import AdminSuppliers  from './admin/AdminSuppliers';
 import AdminProducts   from './admin/AdminProducts';
 import AdminOffers     from './admin/AdminOffers';
 import AdminBrands     from './admin/AdminBrands';
@@ -274,7 +275,6 @@ import AdminCategories from './admin/AdminCategories';
 import AdminRegistrations from './admin/AdminRegistrations';
 import AdminPdfs from './admin/AdminPdfs';
 
-// Temporary bypass for login as requested
 function AdminShell({ onLogout }) {
   const location = useLocation();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -283,7 +283,7 @@ function AdminShell({ onLogout }) {
 
   return (
     <div className="admin-layout admin-bg">
-      {/* Sidebar */}
+
       <aside className="admin-sidebar glass-panel" style={{ borderRadius: 0, borderTop: 'none', borderBottom: 'none', borderLeft: 'none' }}>
         <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '1rem' }}>
           <h2 style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -307,6 +307,9 @@ function AdminShell({ onLogout }) {
           <NavLink to="/admin/users" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
             <Users size={20} /> Customers
           </NavLink>
+          <NavLink to="/admin/suppliers" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+            <Building2 size={20} /> Suppliers
+          </NavLink>
           <NavLink to="/admin/brands" className={({isActive}) => `admin-nav-item ${isActive ? 'active' : ''}`}>
             <Settings size={20} /> Brands
           </NavLink>
@@ -325,13 +328,12 @@ function AdminShell({ onLogout }) {
         </div>
       </aside>
 
-        {/* Main Content */}
       <main className="admin-main-content">
-        {/* Topbar */}
+
         <header className="glass-header admin-flex-between" style={{ padding: '1rem 2rem', position: 'relative' }}>
           <div />
           <div className="admin-flex-center" style={{ gap: '1rem', position: 'relative' }}>
-            {/* Profile Avatar Button */}
+
             <button
               onClick={() => setProfileOpen(o => !o)}
               style={{
@@ -355,7 +357,6 @@ function AdminShell({ onLogout }) {
               <ChevronDown size={14} style={{ color: '#94a3b8', marginLeft: '2px', transform: profileOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
             </button>
 
-            {/* Dropdown */}
             {profileOpen && (
               <div style={{
                 position: 'absolute', top: 'calc(100% + 8px)', right: 0,
@@ -363,7 +364,7 @@ function AdminShell({ onLogout }) {
                 borderRadius: '12px', padding: '12px', minWidth: '240px',
                 boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 1000
               }}>
-                {/* Profile header */}
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                   <div style={{
                     width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0,
@@ -381,7 +382,7 @@ function AdminShell({ onLogout }) {
                     </div>
                   </div>
                 </div>
-                {/* Logout */}
+
                 <button
                   onClick={() => { setProfileOpen(false); onLogout(); }}
                   style={{
@@ -398,7 +399,6 @@ function AdminShell({ onLogout }) {
           </div>
         </header>
 
-        {/* Page Content */}
         <div className="admin-page-content">
           <Routes>
             <Route path="/" element={<Navigate to="dashboard" replace />} />
@@ -407,6 +407,7 @@ function AdminShell({ onLogout }) {
             <Route path="offers" element={<AdminOffers />} />
             <Route path="registrations" element={<AdminRegistrations />} />
             <Route path="users" element={<AdminUsers />} />
+            <Route path="suppliers" element={<AdminSuppliers />} />
             <Route path="brands" element={<AdminBrands />} />
             <Route path="categories" element={<AdminCategories />} />
             <Route path="pdfs" element={<AdminPdfs />} />
@@ -430,13 +431,13 @@ function AdminLogin({ onLogin }) {
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
         body: JSON.stringify({ email, password }),
       });
-      
+
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         throw new Error('Server returned invalid response. Please check server logs.');
@@ -476,12 +477,12 @@ function AdminLogin({ onLogin }) {
           </button>
         </form>
 
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '12px', 
-          background: 'rgba(255,255,255,0.05)', 
-          border: '1px dashed rgba(255,255,255,0.15)', 
-          borderRadius: '6px', 
+        <div style={{
+          marginTop: '20px',
+          padding: '12px',
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px dashed rgba(255,255,255,0.15)',
+          borderRadius: '6px',
           fontSize: '12px',
           color: '#94a3b8',
           display: 'flex',
@@ -490,7 +491,7 @@ function AdminLogin({ onLogin }) {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong>Demo Credentials:</strong>
-            <button 
+            <button
               type="button"
               onClick={() => {
                 setEmail('admin@navsainternational.com');

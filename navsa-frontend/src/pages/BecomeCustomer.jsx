@@ -1,4 +1,4 @@
-// import React, { useState, useEffect } from 'react';
+// import React, { useState, useEffect, useRef } from 'react';
 // import './BecomeCustomer.css';
 
 // const PHONE_CODES = [
@@ -7,6 +7,7 @@
 //   { country: "Albania", code: "+355" },
 //   { country: "Algeria", code: "+213" },
 //   { country: "American Samoa", code: "+1" },
+//   { country: "Andorra", code: "+376" },
 //   { country: "Angola", code: "+244" },
 //   { country: "Anguilla", code: "+1" },
 //   { country: "Antigua and Barbuda", code: "+1" },
@@ -254,6 +255,197 @@
 //   return `${dialCode} ${cleanNumber}`.trim();
 // }
 
+// const PHONE_COUNTRY_ALIASES = {
+//   'Congo (Congo-Brazzaville)': 'Republic of the Congo',
+//   'Czechia (Czech Republic)': 'Czech Republic',
+//   'Eswatini (fmr. Swaziland)': 'Eswatini',
+//   'Holy See': 'Vatican City',
+//   'Micronesia': 'Federated States of Micronesia',
+//   'Myanmar (formerly Burma)': 'Myanmar',
+//   'Palestine State': 'Palestine',
+//   'Sao Tome and Principe': 'São Tomé and Príncipe',
+//   'United States of America': 'United States',
+// };
+
+// function getPhoneCodeOptionForCountry(countryName) {
+//   const phoneCountry = PHONE_COUNTRY_ALIASES[countryName] || countryName;
+//   const match = PHONE_CODES.find(item => item.country === phoneCountry);
+//   return match ? `${match.country}|${match.code}` : null;
+// }
+
+// const CURRENCY_SYMBOLS = {
+//   GBP: '£',
+//   EURO: '€',
+//   DOLLAR: '$',
+// };
+
+// let recaptchaScriptPromise = null;
+
+// function loadRecaptchaV2Script() {
+//   if (window.grecaptcha?.render) {
+//     return Promise.resolve(window.grecaptcha);
+//   }
+
+//   if (recaptchaScriptPromise) {
+//     return recaptchaScriptPromise;
+//   }
+
+//   recaptchaScriptPromise = new Promise((resolve, reject) => {
+//     const scriptId = 'navsa-google-recaptcha-v2';
+//     let settled = false;
+//     let pollTimer = null;
+//     let timeoutTimer = null;
+
+//     const cleanupTimers = () => {
+//       if (pollTimer !== null) {
+//         window.clearInterval(pollTimer);
+//       }
+
+//       if (timeoutTimer !== null) {
+//         window.clearTimeout(timeoutTimer);
+//       }
+//     };
+
+//     const resolveWhenReady = () => {
+//       if (settled || !window.grecaptcha?.render) {
+//         return;
+//       }
+
+//       settled = true;
+//       cleanupTimers();
+//       resolve(window.grecaptcha);
+//     };
+
+//     const rejectLoad = () => {
+//       if (settled) {
+//         return;
+//       }
+
+//       settled = true;
+//       cleanupTimers();
+//       reject(new Error('Google reCAPTCHA could not be loaded.'));
+//     };
+
+//     let script = document.getElementById(scriptId);
+
+//     if (!script) {
+//       script = document.createElement('script');
+//       script.id = scriptId;
+//       script.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
+//       script.async = true;
+//       script.defer = true;
+//       document.head.appendChild(script);
+//     }
+
+//     script.addEventListener('load', resolveWhenReady, { once: true });
+//     script.addEventListener('error', rejectLoad, { once: true });
+
+//     // Polling prevents a blank widget when the script finishes loading before
+//     // React attaches its load listener, including React StrictMode development.
+//     pollTimer = window.setInterval(resolveWhenReady, 100);
+//     timeoutTimer = window.setTimeout(rejectLoad, 15000);
+
+//     resolveWhenReady();
+//   }).catch(error => {
+//     // Allow a later retry after a temporary network or extension failure.
+//     recaptchaScriptPromise = null;
+//     throw error;
+//   });
+
+//   return recaptchaScriptPromise;
+// }
+
+// function RecaptchaCheckbox({ siteKey, onTokenChange, resetCounter }) {
+//   const containerRef = useRef(null);
+//   const widgetIdRef = useRef(null);
+//   const callbackRef = useRef(onTokenChange);
+//   const [loadError, setLoadError] = useState('');
+
+//   useEffect(() => {
+//     callbackRef.current = onTokenChange;
+//   }, [onTokenChange]);
+
+//   useEffect(() => {
+//     if (!siteKey || !containerRef.current) {
+//       return undefined;
+//     }
+
+//     let cancelled = false;
+//     setLoadError('');
+
+//     loadRecaptchaV2Script()
+//       .then(grecaptcha => {
+//         if (
+//           cancelled ||
+//           !containerRef.current ||
+//           widgetIdRef.current !== null
+//         ) {
+//           return;
+//         }
+
+//         try {
+//           widgetIdRef.current = grecaptcha.render(containerRef.current, {
+//             sitekey: siteKey,
+//             theme: 'light',
+//             size: 'normal',
+//             callback: token => callbackRef.current(token),
+//             'expired-callback': () => callbackRef.current(''),
+//             'error-callback': () => {
+//               callbackRef.current('');
+//               setLoadError(
+//                 'Google reCAPTCHA had a connection problem. Please refresh the page and try again.'
+//               );
+//             },
+//           });
+//         } catch (error) {
+//           console.error('Unable to render Google reCAPTCHA:', error);
+//           setLoadError(
+//             'Google reCAPTCHA could not be displayed. Please refresh the page and check the browser console.'
+//           );
+//         }
+//       })
+//       .catch(error => {
+//         if (cancelled) {
+//           return;
+//         }
+
+//         console.error('Unable to load Google reCAPTCHA:', error);
+//         setLoadError(
+//           'Google reCAPTCHA could not load. Disable any ad/privacy blocker for localhost and refresh the page.'
+//         );
+//       });
+
+//     return () => {
+//       cancelled = true;
+//     };
+//   }, [siteKey]);
+
+//   useEffect(() => {
+//     if (
+//       widgetIdRef.current !== null &&
+//       window.grecaptcha?.reset
+//     ) {
+//       try {
+//         window.grecaptcha.reset(widgetIdRef.current);
+//         callbackRef.current('');
+//       } catch (error) {
+//         console.error('Unable to reset Google reCAPTCHA:', error);
+//       }
+//     }
+//   }, [resetCounter]);
+
+//   return (
+//     <>
+//       <div ref={containerRef} className="recaptcha-widget" />
+//       {loadError && (
+//         <p className="recaptcha-config-error" role="alert">
+//           {loadError}
+//         </p>
+//       )}
+//     </>
+//   );
+// }
+
 // function BecomeCustomer() {
 //   const [isCriteriaConfirmed, setIsCriteriaConfirmed] = useState(false);
 //   const [isSingleTickChecked, setIsSingleTickChecked] = useState(false);
@@ -262,12 +454,15 @@
 //     first_name: '',
 //     last_name: '',
 //     email: '',
+//     confirm_email: '',
 //     password: '',
 //     confirm_password: '',
 //     region: '',
 //     country: '',
 //     position: '',
 //     registered_company_name: '',
+//     company_registration_number: '',
+//     vat_number: '',
 //     trading_years: '',
 //     business_nature: '',
 //     website: '',
@@ -277,6 +472,7 @@
 //     registered_phone: '',
 //     mobile_code: 'United Kingdom|+44',
 //     mobile: '',
+//     whatsapp_offers_opt_in: false,
 //     address_line_1: '',
 //     address_line_2: '',
 //     city: '',
@@ -287,8 +483,6 @@
 //     other_wholesalers: '',
 //     average_order_value: '',
 //     turnover: '',
-//     sell_outside_countries: '',
-//     customs_agent: '',
 //     import_full_containers: '',
 //     brands_interested: '',
 //     categories_interested: [],
@@ -301,10 +495,49 @@
 //     shipping_city: '',
 //     shipping_province: '',
 //     shipping_zip_code: '',
+//     shipping_country: '',
+//     shipping_telephone_code: 'United Kingdom|+44',
+//     shipping_telephone: '',
 //   });
 
 //   const [status, setStatus] = useState(null); // 'submitting', 'success', 'error'
 //   const [validationError, setValidationError] = useState('');
+//   const [recaptchaToken, setRecaptchaToken] = useState('');
+//   const [recaptchaResetCounter, setRecaptchaResetCounter] = useState(0);
+//   const recaptchaSiteKey = String(
+//     import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+//   ).trim();
+
+//   useEffect(() => {
+//     if (status !== 'success') return undefined;
+
+//     const frame = window.requestAnimationFrame(() => {
+//       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+//     });
+
+//     return () => window.cancelAnimationFrame(frame);
+//   }, [status]);
+//   const isUkCustomer = formData.region === 'UK' || formData.country === 'United Kingdom';
+//   const currencySymbol = CURRENCY_SYMBOLS[formData.currency] || '';
+
+//   const averageOrderOptions = currencySymbol
+//     ? [
+//         `${currencySymbol}5,000 - ${currencySymbol}10,000 (UK & Europe only)`,
+//         `${currencySymbol}10,000 - ${currencySymbol}20,000`,
+//         `${currencySymbol}20,000 - ${currencySymbol}40,000`,
+//         `${currencySymbol}40,000+`,
+//       ]
+//     : [];
+
+//   const turnoverOptions = currencySymbol
+//     ? [
+//         `${currencySymbol}0 - ${currencySymbol}500,000`,
+//         `${currencySymbol}500,000 - ${currencySymbol}1,000,000`,
+//         `${currencySymbol}1,000,000 - ${currencySymbol}5,000,000`,
+//         `${currencySymbol}5,000,000 - ${currencySymbol}10,000,000`,
+//         `${currencySymbol}20,000,000+`,
+//       ]
+//     : [];
 //   const countriesList = [
 //     "United Kingdom",
 //     "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia",
@@ -379,15 +612,69 @@
 //     }
 //     if (type === 'checkbox' && name === 'categories_interested') {
 //       setFormData(prev => {
-//         const newCategories = checked 
+//         const newCategories = checked
 //           ? [...prev.categories_interested, value]
 //           : prev.categories_interested.filter(c => c !== value);
 //         return { ...prev, categories_interested: newCategories };
 //       });
 //     } else if (type === 'checkbox') {
-//       setFormData(prev => ({ ...prev, [name]: checked }));
+//       setFormData(prev => {
+//         const next = { ...prev, [name]: checked };
+
+//         if (name === 'same_as_billing' && checked) {
+//           next.shipping_address_line_1 = '';
+//           next.shipping_address_line_2 = '';
+//           next.shipping_city = '';
+//           next.shipping_province = '';
+//           next.shipping_zip_code = '';
+//           next.shipping_country = '';
+//           next.shipping_telephone_code = 'United Kingdom|+44';
+//           next.shipping_telephone = '';
+//         }
+
+//         return next;
+//       });
 //     } else {
-//       setFormData(prev => ({ ...prev, [name]: value }));
+//       setFormData(prev => {
+//         const next = { ...prev, [name]: value };
+
+//         if (name === 'region' && value === 'UK') {
+//           const ukPhoneCodeOption = getPhoneCodeOptionForCountry('United Kingdom');
+//           next.country = 'United Kingdom';
+
+//           if (ukPhoneCodeOption) {
+//             next.registered_phone_code = ukPhoneCodeOption;
+//             next.mobile_code = ukPhoneCodeOption;
+//           }
+//         }
+
+//         if (name === 'country') {
+//           const phoneCodeOption = getPhoneCodeOptionForCountry(value);
+//           if (phoneCodeOption) {
+//             next.registered_phone_code = phoneCodeOption;
+//             next.mobile_code = phoneCodeOption;
+//           }
+//         }
+
+//         if (name === 'shipping_country') {
+//           const shippingPhoneCodeOption = getPhoneCodeOptionForCountry(value);
+//           if (shippingPhoneCodeOption) {
+//             next.shipping_telephone_code = shippingPhoneCodeOption;
+//           }
+//         }
+
+//         if (name === 'currency') {
+//           next.average_order_value = '';
+//           next.turnover = '';
+//         }
+
+//         const nextIsUkCustomer = next.region === 'UK' || next.country === 'United Kingdom';
+//         if ((name === 'region' || name === 'country') && !nextIsUkCustomer) {
+//           next.vat_number = '';
+//         }
+
+//         return next;
+//       });
 //     }
 //   };
 
@@ -395,9 +682,27 @@
 //     e.preventDefault();
 //     setValidationError('');
 
+//     if (formData.email.trim() !== formData.confirm_email.trim()) {
+//       setValidationError('Email and Confirm Email must match.');
+//       document.getElementById('confirm-email')?.focus();
+//       return;
+//     }
+
 //     if (formData.password !== formData.confirm_password) {
 //       setValidationError('Password and Confirm Password must match.');
 //       document.getElementById('confirm-password')?.focus();
+//       return;
+//     }
+
+//     if (formData.whatsapp_offers_opt_in && !formData.mobile.trim()) {
+//       setValidationError('Mobile Number is required when WhatsApp offers are selected.');
+//       document.querySelector('input[name="mobile"]')?.focus();
+//       return;
+//     }
+
+//     if (isUkCustomer && !formData.vat_number.trim()) {
+//       setValidationError('VAT Number is required for UK customers.');
+//       document.getElementById('vat-number')?.focus();
 //       return;
 //     }
 
@@ -406,20 +711,48 @@
 //       return;
 //     }
 
+//     if (!recaptchaSiteKey) {
+//       setValidationError('Google reCAPTCHA is not configured. Please contact NAVSA support.');
+//       document.querySelector('.recaptcha-section')?.scrollIntoView({
+//         behavior: 'smooth',
+//         block: 'center',
+//       });
+//       return;
+//     }
+
+//     if (!recaptchaToken) {
+//       setValidationError('Please complete the Google reCAPTCHA verification.');
+//       document.querySelector('.recaptcha-section')?.scrollIntoView({
+//         behavior: 'smooth',
+//         block: 'center',
+//       });
+//       return;
+//     }
+
 //     const {
 //       confirm_password,
 //       registered_phone_code,
 //       mobile_code,
+//       shipping_telephone_code,
 //       ...submissionData
 //     } = formData;
 
 //     const payload = {
 //       ...submissionData,
+//       email: formData.email.trim(),
+//       confirm_email: formData.confirm_email.trim(),
+//       vat_number: isUkCustomer ? formData.vat_number.trim() : '',
 //       registered_phone: combineDialCode(
 //         registered_phone_code,
 //         formData.registered_phone
 //       ),
 //       mobile: combineDialCode(mobile_code, formData.mobile),
+//       whatsapp_offers_opt_in: Boolean(formData.whatsapp_offers_opt_in),
+//       shipping_country: formData.same_as_billing ? '' : formData.shipping_country,
+//       shipping_telephone: formData.same_as_billing
+//         ? ''
+//         : combineDialCode(shipping_telephone_code, formData.shipping_telephone),
+//       recaptcha_token: recaptchaToken,
 //     };
 
 //     setStatus('submitting');
@@ -452,6 +785,8 @@
 //       console.error('Error submitting form:', error);
 //       setValidationError(error.message);
 //       setStatus('error');
+//       setRecaptchaToken('');
+//       setRecaptchaResetCounter(current => current + 1);
 //     }
 //   };
 
@@ -478,10 +813,10 @@
 
 //           <div className="form-instructions criteria-box">
 //             <ul className="criteria-list">
-//               <li>• UK companies <strong>must be VAT registered</strong></li>
-//               <li>• Your business is <strong>registered at a commercial property</strong>, not a home address</li>
-//               <li>• Our minimum order is <strong>£5,000.00 for UK & Europe, £10,000.00 for ROW</strong></li>
-//               <li>• You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
+//               <li>UK companies <strong>must be VAT registered</strong></li>
+//               <li>Your business is <strong>registered at a commercial property</strong>, not a home address</li>
+//               <li>Our minimum order is <strong>£5,000.00 for UK & Europe, £10,000.00 for ROW</strong></li>
+//               <li>You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
 //             </ul>
 //           </div>
 
@@ -520,10 +855,10 @@
 //         <div className="form-instructions confirmed-instructions">
 //           <div className="confirmed-badge">✓ Verified Eligibility Criteria</div>
 //           <ul className="criteria-list">
-//             <li>• UK companies <strong>must be VAT registered</strong></li>
-//             <li>• Your business is <strong>registered at a commercial property</strong>, not a home address</li>
-//             <li>• Our minimum order is <strong>£5,000 for UK & Europe, £10,000 for ROW</strong></li>
-//             <li>• You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
+//             <li>UK companies <strong>must be VAT registered</strong></li>
+//             <li>Your business is <strong>registered at a commercial property</strong>, not a home address</li>
+//             <li>Our minimum order is <strong>£5,000 for UK & Europe, £10,000 for ROW</strong></li>
+//             <li>You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
 //           </ul>
 //         </div>
 
@@ -534,49 +869,99 @@
 //           </div>
 //         )}
 
-//         <form onSubmit={handleSubmit} className="customer-form">
+//         <form onSubmit={handleSubmit} className="customer-form" autoComplete="off">
+//           <div className="navsa-autofill-guard" aria-hidden="true">
+//             <input
+//               type="text"
+//               name="navsa_autofill_username_guard"
+//               autoComplete="username"
+//               tabIndex={-1}
+//             />
+//             <input
+//               type="password"
+//               name="navsa_autofill_password_guard"
+//               autoComplete="new-password"
+//               tabIndex={-1}
+//             />
+//           </div>
+
 //           <div className="form-group row">
 //             <div className="col">
 //               <label>First Name *</label>
-//               <input type="text" name="first_name" required value={formData.first_name} onChange={handleChange} />
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="first_name" required value={formData.first_name} onChange={handleChange} />
 //             </div>
 //             <div className="col">
 //               <label>Last Name *</label>
-//               <input type="text" name="last_name" required value={formData.last_name} onChange={handleChange} />
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="last_name" required value={formData.last_name} onChange={handleChange} />
 //             </div>
 //           </div>
 
 //           <div className="form-group row">
 //             <div className="col">
-//               <label>Email *</label>
-//               <input type="email" name="email" required value={formData.email} onChange={handleChange} />
+//               <label htmlFor="customer-email">Email *</label>
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                 id="customer-email"
+//                 type="email"
+//                 name="email"
+//                 required
+//                 value={formData.email}
+//                 onChange={handleChange}
+//               />
 //             </div>
 //             <div className="col">
-//               <label>Password *</label>
-//               <input type="password" name="password" required minLength="6" value={formData.password} onChange={handleChange} autoComplete="new-password" />
+//               <label htmlFor="confirm-email">Confirm Email *</label>
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                 id="confirm-email"
+//                 type="email"
+//                 name="confirm_email"
+//                 required
+//                 value={formData.confirm_email}
+//                 onChange={handleChange}
+//                 aria-invalid={
+//                   Boolean(formData.confirm_email) &&
+//                   formData.email.trim() !== formData.confirm_email.trim()
+//                 }
+//               />
+//               {formData.confirm_email &&
+//                 formData.email.trim() !== formData.confirm_email.trim() && (
+//                   <p className="field-error">Email addresses do not match.</p>
+//                 )}
 //             </div>
 //           </div>
 
-//           <div className="form-group">
-//             <label htmlFor="confirm-password">Confirm Password *</label>
-//             <input
-//               id="confirm-password"
-//               type="password"
-//               name="confirm_password"
-//               required
-//               minLength="6"
-//               value={formData.confirm_password}
-//               onChange={handleChange}
-//               autoComplete="new-password"
-//               aria-invalid={
-//                 Boolean(formData.confirm_password) &&
-//                 formData.password !== formData.confirm_password
-//               }
-//             />
-//             {formData.confirm_password &&
-//               formData.password !== formData.confirm_password && (
-//                 <p className="field-error">Passwords do not match.</p>
-//               )}
+//           <div className="form-group row">
+//             <div className="col">
+//               <label htmlFor="customer-password">Password *</label>
+//               <input autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                 id="customer-password"
+//                 type="password"
+//                 name="password"
+//                 required
+//                 minLength="6"
+//                 value={formData.password}
+//                 onChange={handleChange}
+//               />
+//             </div>
+//             <div className="col">
+//               <label htmlFor="confirm-password">Confirm Password *</label>
+//               <input autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                 id="confirm-password"
+//                 type="password"
+//                 name="confirm_password"
+//                 required
+//                 minLength="6"
+//                 value={formData.confirm_password}
+//                 onChange={handleChange}
+//                 aria-invalid={
+//                   Boolean(formData.confirm_password) &&
+//                   formData.password !== formData.confirm_password
+//                 }
+//               />
+//               {formData.confirm_password &&
+//                 formData.password !== formData.confirm_password && (
+//                   <p className="field-error">Passwords do not match.</p>
+//                 )}
+//             </div>
 //           </div>
 
 //           <div className="form-group">
@@ -600,13 +985,40 @@
 //             </div>
 //             <div className="col">
 //               <label>Your Position at the Company</label>
-//               <input type="text" name="position" value={formData.position} onChange={handleChange} />
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="position" value={formData.position} onChange={handleChange} />
 //             </div>
 //           </div>
 
 //           <div className="form-group">
 //             <label>What is your registered company name? *</label>
-//             <input type="text" name="registered_company_name" required value={formData.registered_company_name} onChange={handleChange} />
+//             <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="registered_company_name" required value={formData.registered_company_name} onChange={handleChange} />
+//           </div>
+
+//           <div className="form-group row">
+//             <div className="col">
+//               <label>Company Registration Number</label>
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                 type="text"
+//                 name="company_registration_number"
+//                 value={formData.company_registration_number}
+//                 onChange={handleChange}
+//               />
+//             </div>
+
+//             {isUkCustomer && (
+//               <div className="col">
+//                 <label htmlFor="vat-number">VAT Number *</label>
+//                 <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                   id="vat-number"
+//                   type="text"
+//                   name="vat_number"
+//                   required={isUkCustomer}
+//                   value={formData.vat_number}
+//                   onChange={handleChange}
+//                 />
+//                 <p className="phone-helper-text">Required for UK customers.</p>
+//               </div>
+//             )}
 //           </div>
 
 //           <div className="form-group row">
@@ -638,12 +1050,12 @@
 
 //           <div className="form-group">
 //             <label>Website address</label>
-//             <input type="text" name="website" value={formData.website} onChange={handleChange} />
+//             <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="website" placeholder="https://" value={formData.website} onChange={handleChange} />
 //           </div>
 
 //           <div className="form-group">
 //             <label>Full name of the director of the business *</label>
-//             <input type="text" name="director_name" required value={formData.director_name} onChange={handleChange} />
+//             <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="director_name" required value={formData.director_name} onChange={handleChange} />
 //           </div>
 
 //           <div className="form-group">
@@ -674,12 +1086,11 @@
 //                     </option>
 //                   ))}
 //                 </select>
-//                 <input
+//                 <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
 //                   type="tel"
 //                   name="registered_phone"
 //                   required
 //                   inputMode="tel"
-//                   autoComplete="tel"
 //                   value={formData.registered_phone}
 //                   onChange={handleChange}
 //                   placeholder="Phone number"
@@ -687,7 +1098,7 @@
 //               </div>
 //             </div>
 //             <div className="col">
-//               <label>Mobile Number (For WhatsApp offers)</label>
+//               <label>Mobile Number</label>
 //               <div className="phone-input-group">
 //                 <select
 //                   name="mobile_code"
@@ -704,45 +1115,51 @@
 //                     </option>
 //                   ))}
 //                 </select>
-//                 <input
+//                 <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
 //                   type="tel"
 //                   name="mobile"
+//                   required={formData.whatsapp_offers_opt_in}
 //                   inputMode="tel"
-//                   autoComplete="tel"
 //                   value={formData.mobile}
 //                   onChange={handleChange}
 //                   placeholder="Mobile number"
 //                 />
 //               </div>
-//               <p className="phone-helper-text">
-//                 Enter if you would like to receive offers via WhatsApp
-//               </p>
+//               <label className="whatsapp-opt-in-label">
+//                 <input
+//                   type="checkbox"
+//                   name="whatsapp_offers_opt_in"
+//                   checked={formData.whatsapp_offers_opt_in}
+//                   onChange={handleChange}
+//                 />
+//                 <span>Check if you would like to receive offers via WhatsApp.</span>
+//               </label>
 //             </div>
 //           </div>
 
 //           <h3 className="section-title">Company Billing Address *</h3>
 //           <div className="form-group">
 //             <label>Address line 1</label>
-//             <input type="text" name="address_line_1" required value={formData.address_line_1} onChange={handleChange} />
+//             <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="address_line_1" required value={formData.address_line_1} onChange={handleChange} />
 //           </div>
 //           <div className="form-group">
 //             <label>Address line 2</label>
-//             <input type="text" name="address_line_2" value={formData.address_line_2} onChange={handleChange} />
+//             <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="address_line_2" value={formData.address_line_2} onChange={handleChange} />
 //           </div>
 //           <div className="form-group row">
 //             <div className="col">
-//               <label>City</label>
-//               <input type="text" name="city" required value={formData.city} onChange={handleChange} />
+//               <label>City/Town</label>
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="city" required value={formData.city} onChange={handleChange} />
 //             </div>
 //             <div className="col">
-//               <label>Province</label>
-//               <input type="text" name="province" required value={formData.province} onChange={handleChange} />
+//               <label>State/Province</label>
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="province" required value={formData.province} onChange={handleChange} />
 //             </div>
 //           </div>
 //           <div className="form-group row">
 //             <div className="col">
 //               <label>Zip code</label>
-//               <input type="text" name="zip_code" required value={formData.zip_code} onChange={handleChange} />
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="zip_code" required value={formData.zip_code} onChange={handleChange} />
 //             </div>
 //           </div>
 
@@ -758,26 +1175,70 @@
 //               <h3 className="section-title">Shipping Address *</h3>
 //               <div className="form-group">
 //                 <label>Shipping Address line 1</label>
-//                 <input type="text" name="shipping_address_line_1" required={!formData.same_as_billing} value={formData.shipping_address_line_1} onChange={handleChange} />
+//                 <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_address_line_1" required={!formData.same_as_billing} value={formData.shipping_address_line_1} onChange={handleChange} />
 //               </div>
 //               <div className="form-group">
 //                 <label>Shipping Address line 2</label>
-//                 <input type="text" name="shipping_address_line_2" value={formData.shipping_address_line_2} onChange={handleChange} />
+//                 <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_address_line_2" value={formData.shipping_address_line_2} onChange={handleChange} />
 //               </div>
 //               <div className="form-group row">
 //                 <div className="col">
-//                   <label>Shipping City</label>
-//                   <input type="text" name="shipping_city" required={!formData.same_as_billing} value={formData.shipping_city} onChange={handleChange} />
+//                   <label>Shipping City/Town</label>
+//                   <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_city" required={!formData.same_as_billing} value={formData.shipping_city} onChange={handleChange} />
 //                 </div>
 //                 <div className="col">
-//                   <label>Shipping Province</label>
-//                   <input type="text" name="shipping_province" required={!formData.same_as_billing} value={formData.shipping_province} onChange={handleChange} />
+//                   <label>Shipping State/Province</label>
+//                   <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_province" required={!formData.same_as_billing} value={formData.shipping_province} onChange={handleChange} />
 //                 </div>
 //               </div>
 //               <div className="form-group row">
 //                 <div className="col">
 //                   <label>Shipping Zip code</label>
-//                   <input type="text" name="shipping_zip_code" required={!formData.same_as_billing} value={formData.shipping_zip_code} onChange={handleChange} />
+//                   <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_zip_code" required={!formData.same_as_billing} value={formData.shipping_zip_code} onChange={handleChange} />
+//                 </div>
+//                 <div className="col">
+//                   <label>Shipping Country *</label>
+//                   <select
+//                     name="shipping_country"
+//                     required={!formData.same_as_billing}
+//                     value={formData.shipping_country}
+//                     onChange={handleChange}
+//                     style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}
+//                   >
+//                     <option value="">- Select -</option>
+//                     {countriesList.map(c => (
+//                       <option key={`shipping-${c}`} value={c}>{c}</option>
+//                     ))}
+//                   </select>
+//                 </div>
+//               </div>
+//               <div className="form-group">
+//                 <label>Shipping Telephone *</label>
+//                 <div className="phone-input-group shipping-phone-input-group">
+//                   <select
+//                     name="shipping_telephone_code"
+//                     value={formData.shipping_telephone_code}
+//                     onChange={handleChange}
+//                     aria-label="Shipping telephone country code"
+//                   >
+//                     {PHONE_CODES.map(({ country, code }) => (
+//                       <option
+//                         key={`shipping-phone-${country}-${code}`}
+//                         value={`${country}|${code}`}
+//                       >
+//                         {country} ({code})
+//                       </option>
+//                     ))}
+//                   </select>
+//                   <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+//                     type="tel"
+//                     name="shipping_telephone"
+//                     required={!formData.same_as_billing}
+//                     inputMode="tel"
+//                     value={formData.shipping_telephone}
+//                     onChange={handleChange}
+//                     placeholder="Shipping telephone number"
+//                   />
 //                 </div>
 //               </div>
 //             </div>
@@ -787,11 +1248,11 @@
 //           <div className="form-group row">
 //             <div className="col">
 //               <label>Accounts Name *</label>
-//               <input type="text" name="account_name" required value={formData.account_name} onChange={handleChange} />
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="account_name" required value={formData.account_name} onChange={handleChange} />
 //             </div>
 //             <div className="col">
 //               <label>Accounts Email Address *</label>
-//               <input type="email" name="account_email" required value={formData.account_email} onChange={handleChange} />
+//               <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="email" name="account_email" required value={formData.account_email} onChange={handleChange} />
 //             </div>
 //           </div>
 
@@ -824,38 +1285,38 @@
 //           <div className="form-group row">
 //             <div className="col">
 //               <label>Average Order Value *</label>
-//               <select name="average_order_value" required value={formData.average_order_value} onChange={handleChange} style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}>
-//                 <option value="">Please Select</option>
-//                 <option value="£5,000 - £10,000 (UK & Europe only)">£5,000 - £10,000 (UK & Europe only)</option>
-//                 <option value="£10,000 - £20,000">£10,000 - £20,000</option>
-//                 <option value="£20,000 - £40,000">£20,000 - £40,000</option>
-//                 <option value="£40,000+">£40,000+</option>
+//               <select
+//                 name="average_order_value"
+//                 required
+//                 disabled={!formData.currency}
+//                 value={formData.average_order_value}
+//                 onChange={handleChange}
+//               >
+//                 <option value="">
+//                   {formData.currency ? 'Please Select' : 'Select currency first'}
+//                 </option>
+//                 {averageOrderOptions.map(option => (
+//                   <option key={option} value={option}>{option}</option>
+//                 ))}
 //               </select>
 //             </div>
+
 //             <div className="col">
 //               <label>Company Turnover *</label>
-//               <select name="turnover" required value={formData.turnover} onChange={handleChange} style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}>
-//                 <option value="">Please Select</option>
-//                 <option value="0 - 500,000">0 - 500,000</option>
-//                 <option value="500,000 - 1,000,000">500,000 - 1,000,000</option>
-//                 <option value="1,000,000 - 5,000,000">1,000,000 - 5,000,000</option>
-//                 <option value="5,000,000- 10,000,000">5,000,000- 10,000,000</option>
-//                 <option value="20,000,000 +">20,000,000 +</option>
+//               <select
+//                 name="turnover"
+//                 required
+//                 disabled={!formData.currency}
+//                 value={formData.turnover}
+//                 onChange={handleChange}
+//               >
+//                 <option value="">
+//                   {formData.currency ? 'Please Select' : 'Select currency first'}
+//                 </option>
+//                 {turnoverOptions.map(option => (
+//                   <option key={option} value={option}>{option}</option>
+//                 ))}
 //               </select>
-//             </div>
-//           </div>
-
-//           <div className="form-group">
-//             <label>Do you sell or distribute to any countries outside your main business location?</label>
-//             <input type="text" placeholder="If yes please state where" name="sell_outside_countries" value={formData.sell_outside_countries} onChange={handleChange} />
-//           </div>
-
-//           <div className="form-group">
-//             <label>Do you have a customs clearing agent or freight forwarder? *</label>
-//             <div className="radio-group">
-//               <label><input type="radio" name="customs_agent" value="Yes" onChange={handleChange} required/> Yes</label>
-//               <label><input type="radio" name="customs_agent" value="No" onChange={handleChange} /> No</label>
-//               <label><input type="radio" name="customs_agent" value="Not Applicable" onChange={handleChange} /> Not Applicable</label>
 //             </div>
 //           </div>
 
@@ -869,8 +1330,19 @@
 //           </div>
 
 //           <div className="form-group">
-//             <label>What brands are you interested in? *</label>
-//             <input type="text" name="brands_interested" required value={formData.brands_interested} onChange={handleChange} />
+//             <label>What brands are you interested in?</label>
+//             <input
+//               autoComplete="off"
+//               data-lpignore="true"
+//               data-1p-ignore="true"
+//               data-bwignore="true"
+//               aria-autocomplete="none"
+//               type="text"
+//               name="brands_interested"
+//               placeholder="Comma-separated"
+//               value={formData.brands_interested}
+//               onChange={handleChange}
+//             />
 //           </div>
 
 //           <div className="form-group">
@@ -886,7 +1358,7 @@
 
 //           <div className="form-group">
 //             <label>EORI Number (EU ONLY)</label>
-//             <input type="text" name="eori_number" value={formData.eori_number} onChange={handleChange} />
+//             <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="eori_number" value={formData.eori_number} onChange={handleChange} />
 //           </div>
 
 //           <div className="form-group checkbox-full">
@@ -904,13 +1376,27 @@
 //             </label>
 //           </div>
 
-//           <p className="privacy-submit-note">
-//             By clicking submit you are saving your details and you are agreeing to our Privacy Policy.
-//           </p>
+//           <div className="recaptcha-section">
+//             {recaptchaSiteKey ? (
+//               <RecaptchaCheckbox
+//                 siteKey={recaptchaSiteKey}
+//                 onTokenChange={setRecaptchaToken}
+//                 resetCounter={recaptchaResetCounter}
+//               />
+//             ) : (
+//               <p className="recaptcha-config-error" role="alert">
+//                 Google reCAPTCHA is not configured for this website.
+//               </p>
+//             )}
+//           </div>
 
 //           <button type="submit" className="submit-btn" disabled={status === 'submitting'}>
 //             {status === 'submitting' ? 'Submitting...' : 'Submit Application'}
 //           </button>
+
+//           <p className="privacy-submit-note">
+//             By clicking submit you are saving your details and you are agreeing to our Privacy Policy.
+//           </p>
 //         </form>
 //       </div>
 //     </div>
@@ -919,7 +1405,8 @@
 
 // export default BecomeCustomer;
 
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import './BecomeCustomer.css';
 
 const PHONE_CODES = [
@@ -928,12 +1415,14 @@ const PHONE_CODES = [
   { country: "Albania", code: "+355" },
   { country: "Algeria", code: "+213" },
   { country: "American Samoa", code: "+1" },
+  { country: "Andorra", code: "+376" },
   { country: "Angola", code: "+244" },
   { country: "Anguilla", code: "+1" },
   { country: "Antigua and Barbuda", code: "+1" },
   { country: "Argentina", code: "+54" },
   { country: "Armenia", code: "+374" },
   { country: "Aruba", code: "+297" },
+  { country: "Ascension Island", code: "+247" },
   { country: "Australia", code: "+61" },
   { country: "Austria", code: "+43" },
   { country: "Azerbaijan", code: "+994" },
@@ -953,6 +1442,7 @@ const PHONE_CODES = [
   { country: "Botswana", code: "+267" },
   { country: "Brazil", code: "+55" },
   { country: "British Indian Ocean Territory", code: "+246" },
+  { country: "British Virgin Islands", code: "+1" },
   { country: "Brunei", code: "+673" },
   { country: "Bulgaria", code: "+359" },
   { country: "Burkina Faso", code: "+226" },
@@ -1102,9 +1592,11 @@ const PHONE_CODES = [
   { country: "Russia", code: "+7" },
   { country: "Rwanda", code: "+250" },
   { country: "Réunion", code: "+262" },
+  { country: "Saint Barthélemy", code: "+590" },
   { country: "Saint Helena", code: "+290" },
   { country: "Saint Kitts and Nevis", code: "+1" },
   { country: "Saint Lucia", code: "+1" },
+  { country: "Saint Martin", code: "+590" },
   { country: "Saint Pierre and Miquelon", code: "+508" },
   { country: "Saint Vincent and the Grenadines", code: "+1" },
   { country: "Samoa", code: "+685" },
@@ -1142,6 +1634,7 @@ const PHONE_CODES = [
   { country: "Tokelau", code: "+690" },
   { country: "Tonga", code: "+676" },
   { country: "Trinidad and Tobago", code: "+1" },
+  { country: "Tristan da Cunha", code: "+290" },
   { country: "Tunisia", code: "+216" },
   { country: "Turkey", code: "+90" },
   { country: "Turkmenistan", code: "+993" },
@@ -1163,6 +1656,7 @@ const PHONE_CODES = [
   { country: "Yemen", code: "+967" },
   { country: "Zambia", code: "+260" },
   { country: "Zimbabwe", code: "+263" },
+  { country: "Åland Islands", code: "+358" },
 ];
 
 function combineDialCode(codeOption, number) {
@@ -1175,6 +1669,197 @@ function combineDialCode(codeOption, number) {
   return `${dialCode} ${cleanNumber}`.trim();
 }
 
+const PHONE_COUNTRY_ALIASES = {
+  'Congo (Congo-Brazzaville)': 'Republic of the Congo',
+  'Czechia (Czech Republic)': 'Czech Republic',
+  'Eswatini (fmr. Swaziland)': 'Eswatini',
+  'Holy See': 'Vatican City',
+  'Micronesia': 'Federated States of Micronesia',
+  'Myanmar (formerly Burma)': 'Myanmar',
+  'Palestine State': 'Palestine',
+  'Sao Tome and Principe': 'São Tomé and Príncipe',
+  'United States of America': 'United States',
+};
+
+function getPhoneCodeOptionForCountry(countryName) {
+  const phoneCountry = PHONE_COUNTRY_ALIASES[countryName] || countryName;
+  const match = PHONE_CODES.find(item => item.country === phoneCountry);
+  return match ? `${match.country}|${match.code}` : null;
+}
+
+const CURRENCY_SYMBOLS = {
+  GBP: '£',
+  EURO: '€',
+  DOLLAR: '$',
+};
+
+let recaptchaScriptPromise = null;
+
+function loadRecaptchaV2Script() {
+  if (window.grecaptcha?.render) {
+    return Promise.resolve(window.grecaptcha);
+  }
+
+  if (recaptchaScriptPromise) {
+    return recaptchaScriptPromise;
+  }
+
+  recaptchaScriptPromise = new Promise((resolve, reject) => {
+    const scriptId = 'navsa-google-recaptcha-v2';
+    let settled = false;
+    let pollTimer = null;
+    let timeoutTimer = null;
+
+    const cleanupTimers = () => {
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+      }
+
+      if (timeoutTimer !== null) {
+        window.clearTimeout(timeoutTimer);
+      }
+    };
+
+    const resolveWhenReady = () => {
+      if (settled || !window.grecaptcha?.render) {
+        return;
+      }
+
+      settled = true;
+      cleanupTimers();
+      resolve(window.grecaptcha);
+    };
+
+    const rejectLoad = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanupTimers();
+      reject(new Error('Google reCAPTCHA could not be loaded.'));
+    };
+
+    let script = document.getElementById(scriptId);
+
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    script.addEventListener('load', resolveWhenReady, { once: true });
+    script.addEventListener('error', rejectLoad, { once: true });
+
+    // Polling prevents a blank widget when the script finishes loading before
+    // React attaches its load listener, including React StrictMode development.
+    pollTimer = window.setInterval(resolveWhenReady, 100);
+    timeoutTimer = window.setTimeout(rejectLoad, 15000);
+
+    resolveWhenReady();
+  }).catch(error => {
+    // Allow a later retry after a temporary network or extension failure.
+    recaptchaScriptPromise = null;
+    throw error;
+  });
+
+  return recaptchaScriptPromise;
+}
+
+function RecaptchaCheckbox({ siteKey, onTokenChange, resetCounter }) {
+  const containerRef = useRef(null);
+  const widgetIdRef = useRef(null);
+  const callbackRef = useRef(onTokenChange);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    callbackRef.current = onTokenChange;
+  }, [onTokenChange]);
+
+  useEffect(() => {
+    if (!siteKey || !containerRef.current) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLoadError('');
+
+    loadRecaptchaV2Script()
+      .then(grecaptcha => {
+        if (
+          cancelled ||
+          !containerRef.current ||
+          widgetIdRef.current !== null
+        ) {
+          return;
+        }
+
+        try {
+          widgetIdRef.current = grecaptcha.render(containerRef.current, {
+            sitekey: siteKey,
+            theme: 'light',
+            size: 'normal',
+            callback: token => callbackRef.current(token),
+            'expired-callback': () => callbackRef.current(''),
+            'error-callback': () => {
+              callbackRef.current('');
+              setLoadError(
+                'Google reCAPTCHA had a connection problem. Please refresh the page and try again.'
+              );
+            },
+          });
+        } catch (error) {
+          console.error('Unable to render Google reCAPTCHA:', error);
+          setLoadError(
+            'Google reCAPTCHA could not be displayed. Please refresh the page and check the browser console.'
+          );
+        }
+      })
+      .catch(error => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error('Unable to load Google reCAPTCHA:', error);
+        setLoadError(
+          'Google reCAPTCHA could not load. Disable any ad/privacy blocker for localhost and refresh the page.'
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [siteKey]);
+
+  useEffect(() => {
+    if (
+      widgetIdRef.current !== null &&
+      window.grecaptcha?.reset
+    ) {
+      try {
+        window.grecaptcha.reset(widgetIdRef.current);
+        callbackRef.current('');
+      } catch (error) {
+        console.error('Unable to reset Google reCAPTCHA:', error);
+      }
+    }
+  }, [resetCounter]);
+
+  return (
+    <>
+      <div ref={containerRef} className="recaptcha-widget" />
+      {loadError && (
+        <p className="recaptcha-config-error" role="alert">
+          {loadError}
+        </p>
+      )}
+    </>
+  );
+}
+
 function BecomeCustomer() {
   const [isCriteriaConfirmed, setIsCriteriaConfirmed] = useState(false);
   const [isSingleTickChecked, setIsSingleTickChecked] = useState(false);
@@ -1183,12 +1868,15 @@ function BecomeCustomer() {
     first_name: '',
     last_name: '',
     email: '',
+    confirm_email: '',
     password: '',
     confirm_password: '',
     region: '',
     country: '',
     position: '',
     registered_company_name: '',
+    company_registration_number: '',
+    vat_number: '',
     trading_years: '',
     business_nature: '',
     website: '',
@@ -1198,6 +1886,7 @@ function BecomeCustomer() {
     registered_phone: '',
     mobile_code: 'United Kingdom|+44',
     mobile: '',
+    whatsapp_offers_opt_in: false,
     address_line_1: '',
     address_line_2: '',
     city: '',
@@ -1208,8 +1897,6 @@ function BecomeCustomer() {
     other_wholesalers: '',
     average_order_value: '',
     turnover: '',
-    sell_outside_countries: '',
-    customs_agent: '',
     import_full_containers: '',
     brands_interested: '',
     categories_interested: [],
@@ -1222,35 +1909,50 @@ function BecomeCustomer() {
     shipping_city: '',
     shipping_province: '',
     shipping_zip_code: '',
+    shipping_country: '',
+    shipping_telephone_code: 'United Kingdom|+44',
+    shipping_telephone: '',
   });
 
   const [status, setStatus] = useState(null); // 'submitting', 'success', 'error'
   const [validationError, setValidationError] = useState('');
-  const countriesList = [
-    "United Kingdom",
-    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia",
-    "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin",
-    "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi",
-    "Côte d'Ivoire", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China",
-    "Colombia", "Comoros", "Congo (Congo-Brazzaville)", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czechia (Czech Republic)",
-    "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador",
-    "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini (fmr. Swaziland)", "Ethiopia", "Fiji", "Finland", "France", "Gabon",
-    "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti",
-    "Holy See", "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Jamaica",
-    "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho",
-    "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali",
-    "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia",
-    "Montenegro", "Morocco", "Mozambique", "Myanmar (formerly Burma)", "Namibia", "Nauru", "Nepal", "Netherlands",
-    "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway", "Oman", "Pakistan",
-    "Palau", "Palestine State", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
-    "Qatar", "Romania", "Russia", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines",
-    "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone",
-    "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan",
-    "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria", "Tajikistan", "Tanzania", "Thailand",
-    "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda",
-    "Ukraine", "United Arab Emirates", "United States of America", "Uruguay", "Uzbekistan", "Vanuatu", "Venezuela", "Vietnam",
-    "Yemen", "Zambia", "Zimbabwe"
-  ];
+  const [recaptchaToken, setRecaptchaToken] = useState('');
+  const [recaptchaResetCounter, setRecaptchaResetCounter] = useState(0);
+  const recaptchaSiteKey = String(
+    import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+  ).trim();
+
+  useEffect(() => {
+    if (status !== 'success') return undefined;
+
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [status]);
+  const isUkCustomer = formData.region === 'UK' || formData.country === 'United Kingdom';
+  const currencySymbol = CURRENCY_SYMBOLS[formData.currency] || '';
+
+  const averageOrderOptions = currencySymbol
+    ? [
+        `${currencySymbol}5,000 - ${currencySymbol}10,000 (UK & Europe only)`,
+        `${currencySymbol}10,000 - ${currencySymbol}20,000`,
+        `${currencySymbol}20,000 - ${currencySymbol}40,000`,
+        `${currencySymbol}40,000+`,
+      ]
+    : [];
+
+  const turnoverOptions = currencySymbol
+    ? [
+        `${currencySymbol}0 - ${currencySymbol}500,000`,
+        `${currencySymbol}500,000 - ${currencySymbol}1,000,000`,
+        `${currencySymbol}1,000,000 - ${currencySymbol}5,000,000`,
+        `${currencySymbol}5,000,000 - ${currencySymbol}10,000,000`,
+        `${currencySymbol}20,000,000+`,
+      ]
+    : [];
+  const countriesList = PHONE_CODES.map(({ country }) => country);
 
   const [categories, setCategories] = useState([]);
 
@@ -1300,15 +2002,69 @@ function BecomeCustomer() {
     }
     if (type === 'checkbox' && name === 'categories_interested') {
       setFormData(prev => {
-        const newCategories = checked 
+        const newCategories = checked
           ? [...prev.categories_interested, value]
           : prev.categories_interested.filter(c => c !== value);
         return { ...prev, categories_interested: newCategories };
       });
     } else if (type === 'checkbox') {
-      setFormData(prev => ({ ...prev, [name]: checked }));
+      setFormData(prev => {
+        const next = { ...prev, [name]: checked };
+
+        if (name === 'same_as_billing' && checked) {
+          next.shipping_address_line_1 = '';
+          next.shipping_address_line_2 = '';
+          next.shipping_city = '';
+          next.shipping_province = '';
+          next.shipping_zip_code = '';
+          next.shipping_country = '';
+          next.shipping_telephone_code = 'United Kingdom|+44';
+          next.shipping_telephone = '';
+        }
+
+        return next;
+      });
     } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
+      setFormData(prev => {
+        const next = { ...prev, [name]: value };
+
+        if (name === 'region' && value === 'UK') {
+          const ukPhoneCodeOption = getPhoneCodeOptionForCountry('United Kingdom');
+          next.country = 'United Kingdom';
+
+          if (ukPhoneCodeOption) {
+            next.registered_phone_code = ukPhoneCodeOption;
+            next.mobile_code = ukPhoneCodeOption;
+          }
+        }
+
+        if (name === 'country') {
+          const phoneCodeOption = getPhoneCodeOptionForCountry(value);
+          if (phoneCodeOption) {
+            next.registered_phone_code = phoneCodeOption;
+            next.mobile_code = phoneCodeOption;
+          }
+        }
+
+        if (name === 'shipping_country') {
+          const shippingPhoneCodeOption = getPhoneCodeOptionForCountry(value);
+          if (shippingPhoneCodeOption) {
+            next.shipping_telephone_code = shippingPhoneCodeOption;
+          }
+        }
+
+        if (name === 'currency') {
+          next.average_order_value = '';
+          next.turnover = '';
+        }
+
+        const nextIsUkCustomer = next.region === 'UK' || next.country === 'United Kingdom';
+        if ((name === 'region' || name === 'country') && !nextIsUkCustomer) {
+          next.vat_number = '';
+        }
+
+        return next;
+      });
     }
   };
 
@@ -1316,9 +2072,27 @@ function BecomeCustomer() {
     e.preventDefault();
     setValidationError('');
 
+    if (formData.email.trim() !== formData.confirm_email.trim()) {
+      setValidationError('Email and Confirm Email must match.');
+      document.getElementById('confirm-email')?.focus();
+      return;
+    }
+
     if (formData.password !== formData.confirm_password) {
       setValidationError('Password and Confirm Password must match.');
       document.getElementById('confirm-password')?.focus();
+      return;
+    }
+
+    if (formData.whatsapp_offers_opt_in && !formData.mobile.trim()) {
+      setValidationError('Mobile Number is required when WhatsApp offers are selected.');
+      document.querySelector('input[name="mobile"]')?.focus();
+      return;
+    }
+
+    if (isUkCustomer && !formData.vat_number.trim()) {
+      setValidationError('VAT Number is required for UK customers.');
+      document.getElementById('vat-number')?.focus();
       return;
     }
 
@@ -1327,20 +2101,48 @@ function BecomeCustomer() {
       return;
     }
 
+    if (!recaptchaSiteKey) {
+      setValidationError('Google reCAPTCHA is not configured. Please contact NAVSA support.');
+      document.querySelector('.recaptcha-section')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+      return;
+    }
+
+    if (!recaptchaToken) {
+      setValidationError('Please complete the Google reCAPTCHA verification.');
+      document.querySelector('.recaptcha-section')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+      return;
+    }
+
     const {
       confirm_password,
       registered_phone_code,
       mobile_code,
+      shipping_telephone_code,
       ...submissionData
     } = formData;
 
     const payload = {
       ...submissionData,
+      email: formData.email.trim(),
+      confirm_email: formData.confirm_email.trim(),
+      vat_number: isUkCustomer ? formData.vat_number.trim() : '',
       registered_phone: combineDialCode(
         registered_phone_code,
         formData.registered_phone
       ),
       mobile: combineDialCode(mobile_code, formData.mobile),
+      whatsapp_offers_opt_in: Boolean(formData.whatsapp_offers_opt_in),
+      shipping_country: formData.same_as_billing ? '' : formData.shipping_country,
+      shipping_telephone: formData.same_as_billing
+        ? ''
+        : combineDialCode(shipping_telephone_code, formData.shipping_telephone),
+      recaptcha_token: recaptchaToken,
     };
 
     setStatus('submitting');
@@ -1373,6 +2175,8 @@ function BecomeCustomer() {
       console.error('Error submitting form:', error);
       setValidationError(error.message);
       setStatus('error');
+      setRecaptchaToken('');
+      setRecaptchaResetCounter(current => current + 1);
     }
   };
 
@@ -1399,10 +2203,10 @@ function BecomeCustomer() {
 
           <div className="form-instructions criteria-box">
             <ul className="criteria-list">
-              <li>• UK companies <strong>must be VAT registered</strong></li>
-              <li>• Your business is <strong>registered at a commercial property</strong>, not a home address</li>
-              <li>• Our minimum order is <strong>£5,000.00 for UK & Europe, £10,000.00 for ROW</strong></li>
-              <li>• You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
+              <li>UK companies <strong>must be VAT registered</strong></li>
+              <li>Your business is <strong>registered at a commercial property</strong>, not a home address</li>
+              <li>Our minimum order is <strong>£5,000.00 for UK & Europe, £10,000.00 for ROW</strong></li>
+              <li>You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
             </ul>
           </div>
 
@@ -1441,10 +2245,10 @@ function BecomeCustomer() {
         <div className="form-instructions confirmed-instructions">
           <div className="confirmed-badge">✓ Verified Eligibility Criteria</div>
           <ul className="criteria-list">
-            <li>• UK companies <strong>must be VAT registered</strong></li>
-            <li>• Your business is <strong>registered at a commercial property</strong>, not a home address</li>
-            <li>• Our minimum order is <strong>£5,000 for UK & Europe, £10,000 for ROW</strong></li>
-            <li>• You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
+            <li>UK companies <strong>must be VAT registered</strong></li>
+            <li>Your business is <strong>registered at a commercial property</strong>, not a home address</li>
+            <li>Our minimum order is <strong>£5,000 for UK & Europe, £10,000 for ROW</strong></li>
+            <li>You need to be <strong>trading for over 12 months</strong> for UK Customers</li>
           </ul>
         </div>
 
@@ -1455,49 +2259,99 @@ function BecomeCustomer() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="customer-form">
+        <form onSubmit={handleSubmit} className="customer-form" autoComplete="off">
+          <div className="navsa-autofill-guard" aria-hidden="true">
+            <input
+              type="text"
+              name="navsa_autofill_username_guard"
+              autoComplete="username"
+              tabIndex={-1}
+            />
+            <input
+              type="password"
+              name="navsa_autofill_password_guard"
+              autoComplete="new-password"
+              tabIndex={-1}
+            />
+          </div>
+
           <div className="form-group row">
             <div className="col">
               <label>First Name *</label>
-              <input type="text" name="first_name" required value={formData.first_name} onChange={handleChange} />
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="first_name" required value={formData.first_name} onChange={handleChange} />
             </div>
             <div className="col">
               <label>Last Name *</label>
-              <input type="text" name="last_name" required value={formData.last_name} onChange={handleChange} />
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="last_name" required value={formData.last_name} onChange={handleChange} />
             </div>
           </div>
 
           <div className="form-group row">
             <div className="col">
-              <label>Email *</label>
-              <input type="email" name="email" required value={formData.email} onChange={handleChange} />
+              <label htmlFor="customer-email">Email *</label>
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                id="customer-email"
+                type="email"
+                name="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+              />
             </div>
             <div className="col">
-              <label>Password *</label>
-              <input type="password" name="password" required minLength="6" value={formData.password} onChange={handleChange} autoComplete="new-password" />
+              <label htmlFor="confirm-email">Confirm Email *</label>
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                id="confirm-email"
+                type="email"
+                name="confirm_email"
+                required
+                value={formData.confirm_email}
+                onChange={handleChange}
+                aria-invalid={
+                  Boolean(formData.confirm_email) &&
+                  formData.email.trim() !== formData.confirm_email.trim()
+                }
+              />
+              {formData.confirm_email &&
+                formData.email.trim() !== formData.confirm_email.trim() && (
+                  <p className="field-error">Email addresses do not match.</p>
+                )}
             </div>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="confirm-password">Confirm Password *</label>
-            <input
-              id="confirm-password"
-              type="password"
-              name="confirm_password"
-              required
-              minLength="6"
-              value={formData.confirm_password}
-              onChange={handleChange}
-              autoComplete="new-password"
-              aria-invalid={
-                Boolean(formData.confirm_password) &&
-                formData.password !== formData.confirm_password
-              }
-            />
-            {formData.confirm_password &&
-              formData.password !== formData.confirm_password && (
-                <p className="field-error">Passwords do not match.</p>
-              )}
+          <div className="form-group row">
+            <div className="col">
+              <label htmlFor="customer-password">Password *</label>
+              <input autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                id="customer-password"
+                type="password"
+                name="password"
+                required
+                minLength="6"
+                value={formData.password}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="col">
+              <label htmlFor="confirm-password">Confirm Password *</label>
+              <input autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                id="confirm-password"
+                type="password"
+                name="confirm_password"
+                required
+                minLength="6"
+                value={formData.confirm_password}
+                onChange={handleChange}
+                aria-invalid={
+                  Boolean(formData.confirm_password) &&
+                  formData.password !== formData.confirm_password
+                }
+              />
+              {formData.confirm_password &&
+                formData.password !== formData.confirm_password && (
+                  <p className="field-error">Passwords do not match.</p>
+                )}
+            </div>
           </div>
 
           <div className="form-group">
@@ -1521,13 +2375,40 @@ function BecomeCustomer() {
             </div>
             <div className="col">
               <label>Your Position at the Company</label>
-              <input type="text" name="position" value={formData.position} onChange={handleChange} />
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="position" value={formData.position} onChange={handleChange} />
             </div>
           </div>
 
           <div className="form-group">
             <label>What is your registered company name? *</label>
-            <input type="text" name="registered_company_name" required value={formData.registered_company_name} onChange={handleChange} />
+            <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="registered_company_name" required value={formData.registered_company_name} onChange={handleChange} />
+          </div>
+
+          <div className="form-group row">
+            <div className="col">
+              <label>Company Registration Number</label>
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                type="text"
+                name="company_registration_number"
+                value={formData.company_registration_number}
+                onChange={handleChange}
+              />
+            </div>
+
+            {isUkCustomer && (
+              <div className="col">
+                <label htmlFor="vat-number">VAT Number *</label>
+                <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                  id="vat-number"
+                  type="text"
+                  name="vat_number"
+                  required={isUkCustomer}
+                  value={formData.vat_number}
+                  onChange={handleChange}
+                />
+                <p className="phone-helper-text">Required for UK customers.</p>
+              </div>
+            )}
           </div>
 
           <div className="form-group row">
@@ -1559,12 +2440,12 @@ function BecomeCustomer() {
 
           <div className="form-group">
             <label>Website address</label>
-            <input type="text" name="website" value={formData.website} onChange={handleChange} />
+            <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="website" placeholder="https://" value={formData.website} onChange={handleChange} />
           </div>
 
           <div className="form-group">
             <label>Full name of the director of the business *</label>
-            <input type="text" name="director_name" required value={formData.director_name} onChange={handleChange} />
+            <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="director_name" required value={formData.director_name} onChange={handleChange} />
           </div>
 
           <div className="form-group">
@@ -1595,12 +2476,11 @@ function BecomeCustomer() {
                     </option>
                   ))}
                 </select>
-                <input
+                <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
                   type="tel"
                   name="registered_phone"
                   required
                   inputMode="tel"
-                  autoComplete="tel"
                   value={formData.registered_phone}
                   onChange={handleChange}
                   placeholder="Phone number"
@@ -1608,7 +2488,7 @@ function BecomeCustomer() {
               </div>
             </div>
             <div className="col">
-              <label>Mobile Number (For WhatsApp offers)</label>
+              <label>Mobile Number</label>
               <div className="phone-input-group">
                 <select
                   name="mobile_code"
@@ -1625,45 +2505,51 @@ function BecomeCustomer() {
                     </option>
                   ))}
                 </select>
-                <input
+                <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
                   type="tel"
                   name="mobile"
+                  required={formData.whatsapp_offers_opt_in}
                   inputMode="tel"
-                  autoComplete="tel"
                   value={formData.mobile}
                   onChange={handleChange}
                   placeholder="Mobile number"
                 />
               </div>
-              <p className="phone-helper-text">
-                Enter if you would like to receive offers via WhatsApp
-              </p>
+              <label className="whatsapp-opt-in-label">
+                <input
+                  type="checkbox"
+                  name="whatsapp_offers_opt_in"
+                  checked={formData.whatsapp_offers_opt_in}
+                  onChange={handleChange}
+                />
+                <span>Check if you would like to receive offers via WhatsApp.</span>
+              </label>
             </div>
           </div>
 
           <h3 className="section-title">Company Billing Address *</h3>
           <div className="form-group">
             <label>Address line 1</label>
-            <input type="text" name="address_line_1" required value={formData.address_line_1} onChange={handleChange} />
+            <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="address_line_1" required value={formData.address_line_1} onChange={handleChange} />
           </div>
           <div className="form-group">
             <label>Address line 2</label>
-            <input type="text" name="address_line_2" value={formData.address_line_2} onChange={handleChange} />
+            <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="address_line_2" value={formData.address_line_2} onChange={handleChange} />
           </div>
           <div className="form-group row">
             <div className="col">
-              <label>City</label>
-              <input type="text" name="city" required value={formData.city} onChange={handleChange} />
+              <label>City/Town</label>
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="city" required value={formData.city} onChange={handleChange} />
             </div>
             <div className="col">
-              <label>Province</label>
-              <input type="text" name="province" required value={formData.province} onChange={handleChange} />
+              <label>State/Province</label>
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="province" required value={formData.province} onChange={handleChange} />
             </div>
           </div>
           <div className="form-group row">
             <div className="col">
               <label>Zip code</label>
-              <input type="text" name="zip_code" required value={formData.zip_code} onChange={handleChange} />
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="zip_code" required value={formData.zip_code} onChange={handleChange} />
             </div>
           </div>
 
@@ -1679,26 +2565,70 @@ function BecomeCustomer() {
               <h3 className="section-title">Shipping Address *</h3>
               <div className="form-group">
                 <label>Shipping Address line 1</label>
-                <input type="text" name="shipping_address_line_1" required={!formData.same_as_billing} value={formData.shipping_address_line_1} onChange={handleChange} />
+                <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_address_line_1" required={!formData.same_as_billing} value={formData.shipping_address_line_1} onChange={handleChange} />
               </div>
               <div className="form-group">
                 <label>Shipping Address line 2</label>
-                <input type="text" name="shipping_address_line_2" value={formData.shipping_address_line_2} onChange={handleChange} />
+                <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_address_line_2" value={formData.shipping_address_line_2} onChange={handleChange} />
               </div>
               <div className="form-group row">
                 <div className="col">
-                  <label>Shipping City</label>
-                  <input type="text" name="shipping_city" required={!formData.same_as_billing} value={formData.shipping_city} onChange={handleChange} />
+                  <label>Shipping City/Town</label>
+                  <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_city" required={!formData.same_as_billing} value={formData.shipping_city} onChange={handleChange} />
                 </div>
                 <div className="col">
-                  <label>Shipping Province</label>
-                  <input type="text" name="shipping_province" required={!formData.same_as_billing} value={formData.shipping_province} onChange={handleChange} />
+                  <label>Shipping State/Province</label>
+                  <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_province" required={!formData.same_as_billing} value={formData.shipping_province} onChange={handleChange} />
                 </div>
               </div>
               <div className="form-group row">
                 <div className="col">
                   <label>Shipping Zip code</label>
-                  <input type="text" name="shipping_zip_code" required={!formData.same_as_billing} value={formData.shipping_zip_code} onChange={handleChange} />
+                  <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="shipping_zip_code" required={!formData.same_as_billing} value={formData.shipping_zip_code} onChange={handleChange} />
+                </div>
+                <div className="col">
+                  <label>Shipping Country *</label>
+                  <select
+                    name="shipping_country"
+                    required={!formData.same_as_billing}
+                    value={formData.shipping_country}
+                    onChange={handleChange}
+                    style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}
+                  >
+                    <option value="">- Select -</option>
+                    {countriesList.map(c => (
+                      <option key={`shipping-${c}`} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Shipping Telephone *</label>
+                <div className="phone-input-group shipping-phone-input-group">
+                  <select
+                    name="shipping_telephone_code"
+                    value={formData.shipping_telephone_code}
+                    onChange={handleChange}
+                    aria-label="Shipping telephone country code"
+                  >
+                    {PHONE_CODES.map(({ country, code }) => (
+                      <option
+                        key={`shipping-phone-${country}-${code}`}
+                        value={`${country}|${code}`}
+                      >
+                        {country} ({code})
+                      </option>
+                    ))}
+                  </select>
+                  <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none"
+                    type="tel"
+                    name="shipping_telephone"
+                    required={!formData.same_as_billing}
+                    inputMode="tel"
+                    value={formData.shipping_telephone}
+                    onChange={handleChange}
+                    placeholder="Shipping telephone number"
+                  />
                 </div>
               </div>
             </div>
@@ -1708,11 +2638,11 @@ function BecomeCustomer() {
           <div className="form-group row">
             <div className="col">
               <label>Accounts Name *</label>
-              <input type="text" name="account_name" required value={formData.account_name} onChange={handleChange} />
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="account_name" required value={formData.account_name} onChange={handleChange} />
             </div>
             <div className="col">
               <label>Accounts Email Address *</label>
-              <input type="email" name="account_email" required value={formData.account_email} onChange={handleChange} />
+              <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="email" name="account_email" required value={formData.account_email} onChange={handleChange} />
             </div>
           </div>
 
@@ -1745,38 +2675,38 @@ function BecomeCustomer() {
           <div className="form-group row">
             <div className="col">
               <label>Average Order Value *</label>
-              <select name="average_order_value" required value={formData.average_order_value} onChange={handleChange} style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}>
-                <option value="">Please Select</option>
-                <option value="£5,000 - £10,000 (UK & Europe only)">£5,000 - £10,000 (UK & Europe only)</option>
-                <option value="£10,000 - £20,000">£10,000 - £20,000</option>
-                <option value="£20,000 - £40,000">£20,000 - £40,000</option>
-                <option value="£40,000+">£40,000+</option>
+              <select
+                name="average_order_value"
+                required
+                disabled={!formData.currency}
+                value={formData.average_order_value}
+                onChange={handleChange}
+              >
+                <option value="">
+                  {formData.currency ? 'Please Select' : 'Select currency first'}
+                </option>
+                {averageOrderOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
               </select>
             </div>
+
             <div className="col">
               <label>Company Turnover *</label>
-              <select name="turnover" required value={formData.turnover} onChange={handleChange} style={{ padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', fontSize: '1rem', boxSizing: 'border-box' }}>
-                <option value="">Please Select</option>
-                <option value="0 - 500,000">0 - 500,000</option>
-                <option value="500,000 - 1,000,000">500,000 - 1,000,000</option>
-                <option value="1,000,000 - 5,000,000">1,000,000 - 5,000,000</option>
-                <option value="5,000,000- 10,000,000">5,000,000- 10,000,000</option>
-                <option value="20,000,000 +">20,000,000 +</option>
+              <select
+                name="turnover"
+                required
+                disabled={!formData.currency}
+                value={formData.turnover}
+                onChange={handleChange}
+              >
+                <option value="">
+                  {formData.currency ? 'Please Select' : 'Select currency first'}
+                </option>
+                {turnoverOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
               </select>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>Do you sell or distribute to any countries outside your main business location?</label>
-            <input type="text" placeholder="If yes please state where" name="sell_outside_countries" value={formData.sell_outside_countries} onChange={handleChange} />
-          </div>
-
-          <div className="form-group">
-            <label>Do you have a customs clearing agent or freight forwarder? *</label>
-            <div className="radio-group">
-              <label><input type="radio" name="customs_agent" value="Yes" onChange={handleChange} required/> Yes</label>
-              <label><input type="radio" name="customs_agent" value="No" onChange={handleChange} /> No</label>
-              <label><input type="radio" name="customs_agent" value="Not Applicable" onChange={handleChange} /> Not Applicable</label>
             </div>
           </div>
 
@@ -1790,8 +2720,19 @@ function BecomeCustomer() {
           </div>
 
           <div className="form-group">
-            <label>What brands are you interested in? *</label>
-            <input type="text" name="brands_interested" required value={formData.brands_interested} onChange={handleChange} />
+            <label>What brands are you interested in?</label>
+            <input
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              aria-autocomplete="none"
+              type="text"
+              name="brands_interested"
+              placeholder="Comma-separated"
+              value={formData.brands_interested}
+              onChange={handleChange}
+            />
           </div>
 
           <div className="form-group">
@@ -1807,7 +2748,7 @@ function BecomeCustomer() {
 
           <div className="form-group">
             <label>EORI Number (EU ONLY)</label>
-            <input type="text" name="eori_number" value={formData.eori_number} onChange={handleChange} />
+            <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" aria-autocomplete="none" type="text" name="eori_number" value={formData.eori_number} onChange={handleChange} />
           </div>
 
           <div className="form-group checkbox-full">
@@ -1825,13 +2766,27 @@ function BecomeCustomer() {
             </label>
           </div>
 
-          <p className="privacy-submit-note">
-            By clicking submit you are saving your details and you are agreeing to our Privacy Policy.
-          </p>
+          <div className="recaptcha-section">
+            {recaptchaSiteKey ? (
+              <RecaptchaCheckbox
+                siteKey={recaptchaSiteKey}
+                onTokenChange={setRecaptchaToken}
+                resetCounter={recaptchaResetCounter}
+              />
+            ) : (
+              <p className="recaptcha-config-error" role="alert">
+                Google reCAPTCHA is not configured for this website.
+              </p>
+            )}
+          </div>
 
           <button type="submit" className="submit-btn" disabled={status === 'submitting'}>
             {status === 'submitting' ? 'Submitting...' : 'Submit Application'}
           </button>
+
+          <p className="privacy-submit-note">
+            By clicking submit you are saving your details and you are agreeing to our Privacy Policy.
+          </p>
         </form>
       </div>
     </div>

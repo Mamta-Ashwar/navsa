@@ -1,3 +1,212 @@
+// import { useState } from "react";
+// import { Link } from "react-router-dom";
+// import { FaChevronDown } from "react-icons/fa";
+// import { colors } from "../../theme";
+// import logo from "../../assets/logo.png";
+
+// const categories = [
+//   { label: "Chocolates",               db: "Chocolates" },
+//   { label: "Groceries",                db: "Groceries" },
+//   { label: "Confectionery",            db: "Confectionery" },
+//   { label: "Crisps & Snacks",          db: "Crisps & Snacks" },
+//   { label: "Cold and Hot Beverages",   db: "Cold and Hot Beverages" },
+//   { label: "Biscuits",                 db: "Biscuits" },
+//   { label: "Seasonal",                 db: "Seasonal" },
+//   { label: "Chilled Items",            db: "Chilled Items" },
+//   { label: "Frozen",                   db: "Frozen" },
+//   { label: "Baby and Kids",            db: "Baby and Kids" },
+//   { label: "Health and Personal Care", db: "Health and Personal Care" },
+//   { label: "Pet Care and Food",        db: "Pet Care and Food" },
+//   { label: "Cleaning & Households",    db: "Cleaning & Households" },
+// ];
+
+// const quickAccess = [
+//   "My Home", "My Favourites", "Previous Products", "All Products",
+// ];
+
+// const promotions = [
+//   "Every Day Low Price", "Weekly Deals", "Monthly Promotions",
+//   "Seasonal Offers", "New Products", "Clearance",
+// ];
+
+// const navItems = [
+//   { name: "Home",               path: "/",                  mega: false },
+//   { name: "Shop",               path: "/shop",              mega: true  },
+//   { name: "Brands",              path: "/brand",             mega: false, dropdown: true },
+//   { name: "About Us",           path: "/about",             mega: false },
+//   { name: "Contact Us",         path: "/contact",           mega: false },
+//   { name: "Become a Customer",  path: "/become-a-customer", mega: false },
+//   { name: "Become a Supplier",  path: "/become-a-supplier", mega: false },
+// ];
+
+// export default function Navigation({ isSticky, scrollProgress }) {
+//   const [megaOpen, setMegaOpen] = useState(false);
+
+//   return (
+//     <nav style={{
+//       width: "100%",
+//       background: isSticky ? "#ffffff" : colors.navy,
+//       position: isSticky ? "fixed" : "relative",
+//       top: isSticky ? 0 : "auto",
+//       left: isSticky ? 0 : "auto",
+//       right: isSticky ? 0 : "auto",
+//       boxShadow: isSticky ? "0 4px 20px rgba(0,0,0,0.08)" : "none",
+//       borderBottom: isSticky ? "1px solid #e2e8f0" : "none",
+//       animation: isSticky ? "navsa-slide-down 0.3s ease-out" : "none",
+//       zIndex: 200,
+//     }}>
+//       <div style={{
+//         maxWidth: "1600px",
+//         margin: "0 auto",
+//         display: "flex",
+//         alignItems: "center",
+//         padding: "0 40px",
+//       }}>
+//         {/* Live Progress Scroll Animated Logo */}
+//         <div
+//           style={{
+//             overflow: "hidden",
+//             display: "flex",
+//             alignItems: "center",
+//             opacity: scrollProgress,
+//             maxWidth: `${scrollProgress * 80}px`,
+//             marginRight: `${scrollProgress * 16}px`,
+//             transform: `translateX(${(1 - scrollProgress) * -40}px)`,
+//             transition: "none",
+//           }}
+//         >
+//           <Link to="/" style={{ display: "flex", alignItems: "center" }}>
+//             <img src={logo} alt="NAVSA Logo" style={{ height: "42px", width: "auto", objectFit: "contain" }} />
+//           </Link>
+//         </div>
+//         {navItems.map((item) =>
+//           item.mega ? (
+//             <div
+//               key={item.name}
+//               style={{ position: "relative" }}
+//               onMouseEnter={() => setMegaOpen(true)}
+//               onMouseLeave={() => setMegaOpen(false)}
+//             >
+//               <Link
+//                 to={item.path}
+//                 style={{
+//                   color: megaOpen ? "#fff" : (isSticky ? colors.navyDeep : "#fff"),
+//                   textDecoration: "none",
+//                   padding: "18px 24px",
+//                   display: "flex",
+//                   alignItems: "center",
+//                   gap: "8px",
+//                   fontWeight: 600,
+//                   fontSize: "15px",
+//                   whiteSpace: "nowrap",
+//                   background: megaOpen ? colors.accent : "transparent",
+//                   transition: "color 0.2s, background 0.2s",
+//                 }}
+//                 onMouseEnter={(e) => {
+//                   e.currentTarget.style.color = "#ffffff";
+//                 }}
+//                 onMouseLeave={(e) => {
+//                   e.currentTarget.style.color = megaOpen ? "#ffffff" : (isSticky ? colors.navyDeep : "#ffffff");
+//                 }}
+//               >
+//                 {item.name}
+//                 <FaChevronDown size={11} />
+//               </Link>
+
+//               {megaOpen && (
+//                 <div style={{
+//                   position: "fixed", top: "auto", left: 0, right: 0,
+//                   background: "#fff", borderTop: `3px solid ${colors.accent}`,
+//                   boxShadow: "0 18px 40px rgba(0,0,0,.15)",
+//                   padding: "35px 6vw", display: "flex", gap: "55px", zIndex: 999,
+//                 }}>
+//                   <div style={{ flex: 2 }}>
+//                     <div style={{ fontWeight: 700, color: colors.navy, marginBottom: "18px", fontSize: "13px", letterSpacing: ".5px" }}>
+//                       SHOP BY CATEGORY
+//                     </div>
+//                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+//                       {categories.map((c) => (
+//                         <Link
+//                           key={c.db}
+//                           to={`/shop?category=${encodeURIComponent(c.db)}`}
+//                           onClick={() => setMegaOpen(false)}
+//                           style={{
+//                             color: "#222", textDecoration: "none",
+//                             padding: "7px 0", borderBottom: "1px solid #f1f1f1", fontSize: "14px",
+//                           }}
+//                         >
+//                           {c.label}
+//                         </Link>
+//                       ))}
+//                     </div>
+//                   </div>
+
+//                   <div style={{ width: "220px", borderLeft: "1px solid #ececec", paddingLeft: "35px" }}>
+//                     <div style={{ fontWeight: 700, color: colors.navy, marginBottom: "18px", fontSize: "13px", letterSpacing: ".5px" }}>
+//                       QUICK ACCESS
+//                     </div>
+//                     {quickAccess.map((q) => (
+//                       <div key={q} style={{ padding: "7px 0", borderBottom: "1px solid #f3f3f3", fontSize: "14px" }}>
+//                         {q}
+//                       </div>
+//                     ))}
+//                   </div>
+
+//                   <div style={{ width: "260px", borderLeft: "1px solid #ececec", paddingLeft: "35px" }}>
+//                     <div style={{ fontWeight: 700, color: colors.navy, marginBottom: "18px", fontSize: "13px", letterSpacing: ".5px" }}>
+//                       PROMOTIONS
+//                     </div>
+//                     {promotions.map((p) => (
+//                       <div key={p} style={{ padding: "7px 0", borderBottom: "1px solid #f3f3f3", color: colors.accent, fontWeight: 600, fontSize: "14px" }}>
+//                         {p}
+//                       </div>
+//                     ))}
+                    
+//                     <a href="https://www.navsainternational.co.uk/resources/deal1.pdf"
+//                       target="_blank" rel="noreferrer"
+//                       style={{ display: "inline-block", marginTop: "20px", color: colors.navy, textDecoration: "none", fontWeight: 700, fontSize: "14px" }}
+//                     >
+//                       📄 Download Latest Deals PDF
+//                     </a>
+//                   </div>
+//                 </div>
+//               )}
+//             </div>
+//           ) : (
+//             <Link
+//               key={item.name}
+//               to={item.path}
+//               style={{
+//                 color: isSticky ? colors.navyDeep : "#fff",
+//                 textDecoration: "none",
+//                 padding: "18px 24px",
+//                 display: "flex",
+//                 alignItems: "center",
+//                 gap: "8px",
+//                 fontWeight: 600,
+//                 fontSize: "15px",
+//                 whiteSpace: "nowrap",
+//                 transition: "color 0.2s, background 0.2s",
+//               }}
+//               onMouseEnter={(e) => {
+//                 e.currentTarget.style.background = colors.accent;
+//                 e.currentTarget.style.color = "#ffffff";
+//               }}
+//               onMouseLeave={(e) => {
+//                 e.currentTarget.style.background = "transparent";
+//                 e.currentTarget.style.color = isSticky ? colors.navyDeep : "#ffffff";
+//               }}
+//             >
+//               {item.name}
+//               {item.dropdown && <FaChevronDown size={11} />}
+//             </Link>
+//           )
+//         )}
+//       </div>
+//     </nav>
+//   );
+// }
+
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { FaChevronDown } from "react-icons/fa";
@@ -35,8 +244,8 @@ const navItems = [
   { name: "Brands",              path: "/brand",             mega: false, dropdown: true },
   { name: "About Us",           path: "/about",             mega: false },
   { name: "Contact Us",         path: "/contact",           mega: false },
-  { name: "Become a Customer",  path: "/become-a-customer", mega: false },
-  { name: "Become a Supplier",  path: "/become-a-supplier", mega: false },
+  { name: "Become a Customer",  path: "/account/create", mega: false },
+  { name: "Become a Supplier",  path: "/account/supplier", mega: false },
 ];
 
 export default function Navigation({ isSticky, scrollProgress }) {
