@@ -76,7 +76,8 @@ Route::prefix('admin')->group(function () {
     Route::post('/registrations/{id}/approve', [AdminController::class, 'approveRegistration']);
     Route::post('/registrations/{id}/reject', [AdminController::class, 'rejectRegistration']);
 
-    // Products CRUD + stock + delete
+    // Products CRUD + stock + delete + ERP import
+    Route::post('/import-erp',                     [AdminController::class, 'importErpProducts']);
     Route::get('/products',                        [AdminController::class, 'products']);
     Route::post('/products',                       [AdminController::class, 'createProduct']);
     Route::put('/products/{id}',                   [AdminController::class, 'updateProduct']);

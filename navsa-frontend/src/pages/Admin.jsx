@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Package, Tag, Users, Settings, LogOut, Lock, UserCheck, ChevronDown } from 'lucide-react';
 import AdminDashboard  from './admin/AdminDashboard';
@@ -14,8 +14,33 @@ import AdminPdfs from './admin/AdminPdfs';
 function AdminShell({ onLogout }) {
   const location = useLocation();
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
   const adminUser = (() => { try { return JSON.parse(localStorage.getItem('admin_user') || '{}'); } catch { return {}; } })();
   const initials = (adminUser.name || 'A').charAt(0).toUpperCase();
+
+  useEffect(() => {
+    if (!profileOpen) return;
+
+    function handleClickOutside(event) {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileOpen(false);
+      }
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        setProfileOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [profileOpen]);
 
   return (
     <div className="admin-layout admin-bg">
@@ -64,9 +89,9 @@ function AdminShell({ onLogout }) {
         {/* Main Content */}
       <main className="admin-main-content">
         {/* Topbar */}
-        <header className="glass-header admin-flex-between" style={{ padding: '1rem 2rem', position: 'relative' }}>
+        <header className="glass-header admin-flex-between" style={{ padding: '1rem 2rem', position: 'relative', zIndex: 100 }}>
           <div />
-          <div className="admin-flex-center" style={{ gap: '1rem', position: 'relative' }}>
+          <div ref={profileRef} className="admin-flex-center" style={{ gap: '1rem', position: 'relative', zIndex: 100 }}>
             {/* Profile Avatar Button */}
             <button
               onClick={() => setProfileOpen(o => !o)}
@@ -95,9 +120,9 @@ function AdminShell({ onLogout }) {
             {profileOpen && (
               <div style={{
                 position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-                background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)',
+                background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)',
                 borderRadius: '12px', padding: '12px', minWidth: '240px',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 1000
+                boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 999
               }}>
                 {/* Profile header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>

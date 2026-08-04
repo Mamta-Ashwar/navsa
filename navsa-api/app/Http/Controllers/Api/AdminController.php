@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Supplier;
+use App\Models\SubCategory;
 use App\Models\User;
 use App\Models\Pdf;
 use Illuminate\Http\Request;
@@ -485,7 +487,7 @@ class AdminController extends Controller
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'type' => 'required|in:deal,manual,other',
+            'type' => 'required|in:deal,manual,banner,other,upcoming',
             'badge' => 'nullable|string|max:50',
             'valid_from' => 'nullable|date',
             'valid_to' => 'nullable|date|after_or_equal:valid_from',
@@ -541,7 +543,7 @@ class AdminController extends Controller
 
         $validated = $request->validate([
             'title' => 'sometimes|required|string|max:255',
-            'type' => 'sometimes|required|in:deal,manual,other',
+            'type' => 'sometimes|required|in:deal,manual,banner,other,upcoming',
             'badge' => 'nullable|string|max:50',
             'valid_from' => 'nullable|date',
             'valid_to' => 'nullable|date|after_or_equal:valid_from',
@@ -670,4 +672,262 @@ class AdminController extends Controller
         return response()->json(['id' => (int) $id, 'destroyed' => true]);
     }
 
+    public function importErpProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:51200'
+        ]);
+
+        @set_time_limit(600);
+        @ini_set('memory_limit', '1024M');
+
+        $file = $request->file('file');
+        $filePath = $file->getRealPath();
+
+        try {
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($filePath);
+            if (method_exists($reader, 'setReadDataOnly')) {
+                $reader->setReadDataOnly(true);
+            }
+            $spreadsheet = $reader->load($filePath);
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, false);
+
+            if (empty($rows)) {
+                return response()->json(['error' => 'The uploaded file is empty.'], 422);
+            }
+
+            $headers = array_shift($rows);
+            $total = count($rows);
+
+            $importedCount = 0;
+            $createdCount  = 0;
+            $updatedCount  = 0;
+            $skippedCount  = 0;
+            $errorCount    = 0;
+            $unknownCodes  = [];
+
+            $suppliers = Supplier::pluck('id', 'id')->toArray();
+            $brands    = Brand::pluck('id', 'brand_name')->toArray();
+
+            $subCategoryMap = [];
+            $hasGroupCode = \Illuminate\Support\Facades\Schema::hasColumn('sub_categories', 'group_code');
+            $cols = $hasGroupCode ? ['id', 'group_code', 'category_id'] : ['id', 'sub_category_name', 'category_id'];
+
+            foreach (SubCategory::select($cols)->get() as $sc) {
+                $keyVal = $hasGroupCode ? $sc->group_code : $sc->sub_category_name;
+                if ($keyVal) {
+                    $subCategoryMap[strtoupper($keyVal)] = [
+                        'category_id'     => $sc->category_id,
+                        'sub_category_id' => $sc->id,
+                    ];
+                }
+            }
+
+            $storageMap = [];
+            if (\Illuminate\Support\Facades\Schema::hasTable('storage_group_mapping') && \Illuminate\Support\Facades\Schema::hasColumn('storage_group_mapping', 'group_code')) {
+                $storageMap = DB::table('storage_group_mapping')
+                    ->pluck('storage_type', 'group_code')
+                    ->mapWithKeys(fn ($value, $key) => [strtoupper($key) => $value])
+                    ->toArray();
+            }
+
+            $headerMap = [];
+            foreach ($headers as $idx => $h) {
+                $headerMap[trim((string)$h)] = $idx;
+            }
+
+            foreach ($rows as $rowIndex => $row) {
+                try {
+                    $refIdx   = $headerMap['Reference'] ?? ($headerMap['PrimarySupplierIndex'] ?? 1);
+                    $descIdx  = $headerMap['Description'] ?? ($headerMap['WebShortDescription'] ?? 2);
+                    $barIdx   = $headerMap['BarcodeEAN'] ?? 7;
+                    $grpIdx   = $headerMap['GroupDesc'] ?? 9;
+                    $priceIdx = $headerMap['Price'] ?? ($headerMap['Cost'] ?? 22);
+
+                    $reference   = trim((string) ($row[$refIdx] ?? ''));
+                    $description = trim((string) ($row[$descIdx] ?? ''));
+
+                    if (empty($description) && empty($reference)) {
+                        $skippedCount++;
+                        continue;
+                    }
+
+                    $barcodeEan = trim((string) ($row[$barIdx] ?? ''));
+                    $groupDesc  = trim((string) ($row[$grpIdx] ?? ''));
+                    $price      = $this->toNumberOrNull($row[$priceIdx] ?? null);
+                    $cost       = $this->toNumberOrNull($row[$headerMap['Cost'] ?? 14] ?? null);
+
+                    $unitsOf    = trim((string) ($row[$headerMap['UnitsOf'] ?? 3] ?? ''));
+                    $innerCase  = $this->toNumberOrNull($row[$headerMap['InnerCaseQuantity'] ?? 4] ?? null);
+                    $outerCase  = $this->toNumberOrNull($row[$headerMap['OuterCaseQuantity'] ?? 5] ?? null);
+                    $qtyDesc    = trim((string) ($row[$headerMap['QtyDesc'] ?? 6] ?? ''));
+                    $barcodeCase= trim((string) ($row[$headerMap['BarcodeCase'] ?? 8] ?? ''));
+                    $vatCode    = trim((string) ($row[$headerMap['VatCode'] ?? 10] ?? ''));
+                    $layerQty   = $this->toNumberOrNull($row[$headerMap['LayerQuantity'] ?? 11] ?? null);
+                    $palletQty  = $this->toNumberOrNull($row[$headerMap['PalletQuantity'] ?? 12] ?? null);
+                    $supplierRef= trim((string) ($row[$headerMap['PrimarySupplierReference'] ?? 13] ?? ''));
+                    $costFromDate= $this->toDateOrNull($row[$headerMap['CostFromDate'] ?? 15] ?? null);
+                    $costToDate  = $this->toDateOrNull($row[$headerMap['CostToDate'] ?? 16] ?? null);
+                    $weight     = $this->toNumberOrNull($row[$headerMap['Weight'] ?? 17] ?? null);
+                    $volume     = $this->toNumberOrNull($row[$headerMap['Volume'] ?? 18] ?? null);
+                    $shelfLife  = $this->toNumberOrNull($row[$headerMap['ShelfLife'] ?? 19] ?? null);
+                    $bbd        = $this->toDateOrNull($row[$headerMap['BBD'] ?? 20] ?? null);
+                    $priceList   = trim((string) ($row[$headerMap['PriceList'] ?? 21] ?? ''));
+                    $fromDate    = $this->toDateOrNull($row[$headerMap['FromDate'] ?? 23] ?? null);
+                    $toDate      = $this->toDateOrNull($row[$headerMap['ToDate'] ?? 24] ?? null);
+                    $commCode   = trim((string) ($row[$headerMap['CommCode'] ?? 25] ?? ''));
+                    $intraCountry= trim((string) ($row[$headerMap['IntraCountry'] ?? 26] ?? ''));
+                    $webShort   = trim((string) ($row[$headerMap['WebShortDescription'] ?? 28] ?? ''));
+                    $webLong    = trim((string) ($row[$headerMap['WebLongDescription'] ?? 29] ?? ''));
+                    $webImage   = trim((string) ($row[$headerMap['WebImage'] ?? 30] ?? ''));
+                    $liveForWeb = isset($headerMap['LiveForWeb']) && isset($row[$headerMap['LiveForWeb']]) ? (int)$row[$headerMap['LiveForWeb']] : 1;
+
+                    $reference = !empty($reference) ? $reference : null;
+
+                    $brandName     = null;
+                    $categoryId    = null;
+                    $subCategoryId = null;
+                    $storageType   = 'Ambient';
+
+                    if (!empty($groupDesc)) {
+                        $cleanGroup = preg_replace('/\s+/', ' ', trim($groupDesc));
+
+                        if (preg_match('/^\S+\s+(.+)$/', $cleanGroup, $matches)) {
+                            $brandName = trim($matches[1]);
+                        }
+
+                        $groupCode = strtoupper(substr($cleanGroup, 0, 5));
+                        $storageType = $storageMap[$groupCode] ?? 'Ambient';
+
+                        if (isset($subCategoryMap[$groupCode])) {
+                            $categoryId    = $subCategoryMap[$groupCode]['category_id'];
+                            $subCategoryId = $subCategoryMap[$groupCode]['sub_category_id'];
+                        } else {
+                            $unknownCodes[$groupCode] = ($unknownCodes[$groupCode] ?? 0) + 1;
+                        }
+                    }
+
+                    $brandId = null;
+                    if (!empty($brandName)) {
+                        if (!isset($brands[$brandName])) {
+                            $brand = Brand::firstOrCreate(
+                                ['brand_name' => $brandName],
+                                ['status' => 1]
+                            );
+                            $brands[$brandName] = $brand->id;
+                        }
+                        $brandId = $brands[$brandName];
+                    }
+
+                    $matchKey = !empty($reference)
+                        ? ['reference' => $reference]
+                        : ['description' => $description];
+
+                    $existing = Product::where($matchKey)->first();
+
+                    Product::updateOrCreate(
+                        $matchKey,
+                        [
+                            'reference'             => $reference,
+                            'category_id'           => $categoryId,
+                            'sub_category_id'       => $subCategoryId,
+                            'brand_id'              => $brandId,
+                            'description'           => $description,
+                            'units_of'              => $unitsOf ?: null,
+                            'inner_case_quantity'   => $innerCase,
+                            'outer_case_quantity'   => $outerCase,
+                            'qty_desc'              => $qtyDesc ?: null,
+                            'barcode_ean'           => $barcodeEan ?: null,
+                            'barcode_case'          => $barcodeCase ?: null,
+                            'group_desc'            => $groupDesc ?: null,
+                            'storage_type'          => $storageType,
+                            'vat_code'              => $vatCode ?: null,
+                            'layer_quantity'        => $layerQty,
+                            'pallet_quantity'       => $palletQty,
+                            'supplier_reference'    => $supplierRef ?: null,
+                            'cost'                  => $cost,
+                            'cost_from_date'        => $costFromDate,
+                            'cost_to_date'          => $costToDate,
+                            'weight'                => $weight,
+                            'volume'                => $volume,
+                            'shelf_life'            => $shelfLife,
+                            'bbd'                   => $bbd,
+                            'price_list'            => $priceList ?: null,
+                            'from_date'             => $fromDate,
+                            'to_date'               => $toDate,
+                            'comm_code'             => $commCode ?: null,
+                            'intra_country'         => $intraCountry ?: null,
+                            'price'                 => $price,
+                            'web_short_description' => $webShort ?: null,
+                            'web_long_description'  => $webLong ?: null,
+                            'web_image'             => $webImage ?: null,
+                            'live_for_web'          => $liveForWeb ? 1 : 0,
+                        ]
+                    );
+
+                    if ($existing) {
+                        $updatedCount++;
+                    } else {
+                        $createdCount++;
+                    }
+                    $importedCount++;
+
+                } catch (\Exception $e) {
+                    $errorCount++;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'ERP Products imported successfully!',
+                'total' => $total,
+                'imported' => $importedCount,
+                'created' => $createdCount,
+                'updated' => $updatedCount,
+                'skipped' => $skippedCount,
+                'errors' => $errorCount,
+                'unknown_group_codes' => $unknownCodes
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to process Excel file: ' . $e->getMessage()], 500);
+        }
+    }
+
+    private function toNumberOrNull($value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        $cleaned = preg_replace('/[^\d.\-]/', '', (string) $value);
+        if ($cleaned === '' || !is_numeric($cleaned)) {
+            return null;
+        }
+        return (float) $cleaned;
+    }
+
+    private function toDateOrNull($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        if (is_numeric($value)) {
+            try {
+                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value)->format('Y-m-d');
+            } catch (\Exception $e) {
+                return null;
+            }
+        }
+        $timestamp = strtotime((string) $value);
+        return $timestamp ? date('Y-m-d', $timestamp) : null;
+    }
 }

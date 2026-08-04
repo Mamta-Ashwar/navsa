@@ -1,9 +1,9 @@
 import {
   getProducts, toggleWeb, toggleOffer, toggleBestOffer, toggleNewArrival, updateStock,
-  softDeleteProduct, hardDeleteProduct, restoreProduct, updateProduct, createProduct
+  softDeleteProduct, hardDeleteProduct, restoreProduct, updateProduct, createProduct, uploadErpExcel
 } from '../../services/adminApi'
 import { getBrands, getCategories } from '../../services/adminApi'
-import { Plus, Edit2, Trash2, Filter, EyeOff, RotateCcw, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Filter, EyeOff, RotateCcw, X, Upload } from 'lucide-react';
 import { useEffect, useState, useCallback } from 'react'
 
 function ProductDetailModal({ product, onClose }) {
@@ -135,35 +135,41 @@ function OfferModal({ product, onClose, onSaved }) {
   )
 }
 
-const ALL_TABS = ['General', 'Images', 'Variants (eg Sizes)', 'Advanced', 'Related', 'SEO', 'Extra']
+const ALL_TABS = ['General', 'Advanced', 'Extra', 'Images', 'SEO']
 
 const EXTRA_FIELDS = [
   { key: 'outer_case_quantity', label: 'ORDER QTY ALLOWED',            type: 'text' },
   { key: 'price_list',          label: 'PriceList',                    type: 'text' },
   { key: 'inner_case_quantity', label: 'Units per Case',               type: 'number' },
-  { key: 'barcode_case',        label: 'Barcode Case',                 type: 'text' },
   { key: 'layer_quantity',      label: 'Layer Quantity',               type: 'number' },
   { key: 'pallet_quantity',     label: 'Pallet Quantity',              type: 'number' },
   { key: 'weight',              label: 'Unit Weight',                  type: 'number' },
   { key: 'volume',              label: 'Unit Volume',                  type: 'number' },
   { key: 'bbd',                 label: 'Best before date (indicative)',type: 'text' },
+  { key: 'shelf_life',          label: 'Shelf Life in Days',           type: 'number' },
   { key: 'from_date',           label: 'Promotion starting FromDate',  type: 'date' },
   { key: 'to_date',             label: 'Promotion finish ToDate',      type: 'date' },
   { key: 'comm_code',           label: 'Comm Code',                    type: 'text' },
   { key: 'intra_country',       label: 'Intra Country',                type: 'text' },
-  { key: 'shelf_life',          label: 'Shelf Life in Days',           type: 'number' },
 ]
 
 const ADVANCED_FIELDS = [
   { key: 'cost',               label: 'Cost (\u00a3)',           type: 'number' },
   { key: 'cost_from_date',     label: 'Cost From Date',     type: 'date' },
   { key: 'cost_to_date',       label: 'Cost To Date',       type: 'date' },
-  { key: 'vat_code',           label: 'VAT Code',           type: 'text' },
+  { key: 'vat_code',           label: 'VAT Code',           type: 'select', options: [
+    { value: 'A', label: 'A (20%)' },
+    { value: 'Z', label: 'Z (0%)' },
+  ] },
   { key: 'storage_type',       label: 'Storage Type',       type: 'select', options: ['Ambient','Frozen','Chilled'] },
   { key: 'supplier_reference', label: 'Supplier Reference', type: 'text' },
   { key: 'obsolete',           label: 'Obsolete',           type: 'text' },
   { key: 'group_desc',         label: 'Group Description',  type: 'text' },
-  { key: 'qty_desc',           label: 'Qty Description',    type: 'text' },
+  { key: 'qty_desc',           label: 'Qty Description',    type: 'select', options: [
+    { value: 'Case', label: 'Case' },
+    { value: 'Layer', label: 'Layer' },
+    { value: 'Pallet', label: 'Pallet' },
+  ] },
   { key: 'units_of',           label: 'Units Of',           type: 'text' },
 ]
 
@@ -211,7 +217,17 @@ function EditProductModal({ product, onClose, onSaved }) {
   useEffect(() => {
     getBrands().then(d => setAllBrands(d || [])).catch(() => {})
     getCategories().then(d => setAllCategories(d || [])).catch(() => {})
-  }, [])
+
+    if (product && product.shelf_life) {
+      const days = parseInt(product.shelf_life, 10)
+      if (!isNaN(days) && days > 0) {
+        const d = new Date()
+        d.setDate(d.getDate() + days)
+        const calcBbd = d.toISOString().split('T')[0]
+        setForm(f => ({ ...f, bbd: f.bbd || calcBbd }))
+      }
+    }
+  }, [product])
 
   const addCat = (item) => {
     if (!selCats.find(s => s.id === item.id)) {
@@ -239,7 +255,22 @@ function EditProductModal({ product, onClose, onSaved }) {
     ...allCategories.map(c => ({ id: `c_${c.id}`, name: `-- ${c.category_name}`, type: 'category' })),
   ].filter(o => o.name.toLowerCase().includes(catSearch.toLowerCase()) && !selCats.find(s => s.id === o.id))
 
-  const hc = (key, val) => setForm(f => ({ ...f, [key]: val }))
+  const hc = (key, val) => {
+    setForm(f => {
+      const next = { ...f, [key]: val }
+      if (key === 'shelf_life') {
+        const days = parseInt(val, 10)
+        if (!isNaN(days) && days > 0) {
+          const d = new Date()
+          d.setDate(d.getDate() + days)
+          next.bbd = d.toISOString().split('T')[0]
+        } else {
+          next.bbd = ''
+        }
+      }
+      return next
+    })
+  }
 
   const generateSKU = () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString()
@@ -337,6 +368,9 @@ function EditProductModal({ product, onClose, onSaved }) {
           <button type="button" onClick={generateBarcode} style={btnSm}>Add barcode</button>
         </div>
       </Row>
+      <Row label="Barcode Case">
+        <input value={form.barcode_case || ''} onChange={e => hc('barcode_case', e.target.value)} placeholder="Case barcode" style={{ ...inp, maxWidth:'200px' }} />
+      </Row>
       <Row label="Price (£)" required>
         <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
           <input type="number" step="0.01" value={form.price || ''} onChange={e => hc('price', e.target.value)} style={{ ...inp, maxWidth:'140px' }} />
@@ -364,20 +398,42 @@ function EditProductModal({ product, onClose, onSaved }) {
 
   const renderFieldList = (fields) => (
     <table style={{ width:'100%', borderCollapse:'collapse' }}><tbody>
-      {fields.map(f => (
-        <Row key={f.key + f.label} label={f.label}>
-          {f.type === 'textarea' ? (
-            <textarea rows={3} value={form[f.key] || ''} onChange={e => hc(f.key, e.target.value)} style={{ ...inp, resize:'vertical' }} />
-          ) : f.type === 'select' ? (
-            <select value={form[f.key] || ''} onChange={e => hc(f.key, e.target.value)} style={inp}>
-              {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-          ) : (
-            <input type={f.type || 'text'} value={form[f.key] || ''} onChange={e => hc(f.key, e.target.value)}
-              style={{ ...inp, maxWidth: f.type === 'number' ? '200px' : '100%' }} />
-          )}
-        </Row>
-      ))}
+      {fields.map(f => {
+        const isBbd = f.key === 'bbd'
+        let fieldVal = form[f.key] || ''
+        if (f.type === 'date' && fieldVal && typeof fieldVal === 'string') {
+          fieldVal = fieldVal.split('T')[0].split(' ')[0]
+        }
+        return (
+          <Row key={f.key + f.label} label={f.label}>
+            {f.type === 'textarea' ? (
+              <textarea rows={3} value={form[f.key] || ''} onChange={e => hc(f.key, e.target.value)} style={{ ...inp, resize:'vertical' }} />
+            ) : f.type === 'select' ? (
+              <select value={form[f.key] || ''} onChange={e => hc(f.key, e.target.value)} style={inp}>
+                {f.options.map(o => {
+                  const val = typeof o === 'object' ? o.value : o
+                  const lbl = typeof o === 'object' ? o.label : o
+                  return <option key={val} value={val}>{lbl}</option>
+                })}
+              </select>
+            ) : (
+              <input
+                type={f.type || 'text'}
+                value={fieldVal}
+                onChange={e => hc(f.key, e.target.value)}
+                disabled={isBbd}
+                style={{
+                  ...inp,
+                  maxWidth: f.type === 'number' ? '200px' : '100%',
+                  background: isBbd ? '#f3f4f6' : '#fff',
+                  color: isBbd ? '#6b7280' : '#333',
+                  cursor: isBbd ? 'not-allowed' : 'text'
+                }}
+              />
+            )}
+          </Row>
+        )
+      })}
     </tbody></table>
   )
 
@@ -425,6 +481,117 @@ function EditProductModal({ product, onClose, onSaved }) {
   )
 }
 
+function ErpImportModal({ onClose, onImportDone }) {
+  const [file, setFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+
+  const handleUpload = async (e) => {
+    e.preventDefault()
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    setResult(null)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await uploadErpExcel(formData)
+      setResult(res)
+      if (onImportDone) onImportDone()
+    } catch (err) {
+      setError(err.message || 'Failed to import Excel file.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000, padding:'20px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'#0f172a', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'16px', width:'100%', maxWidth:'560px', padding:'28px', position:'relative', color:'#fff' }}>
+        <button onClick={onClose} style={{ position:'absolute', top:'16px', right:'16px', background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}><X size={20}/></button>
+        
+        <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'20px', paddingBottom:'16px', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ width:'46px', height:'46px', borderRadius:'12px', background:'linear-gradient(135deg,#10b981,#059669)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'22px' }}>📊</div>
+          <div>
+            <h3 style={{ margin:0, fontSize:'18px', fontWeight:700 }}>Bulk ERP Excel Import</h3>
+            <p style={{ margin:'2px 0 0', color:'#94a3b8', fontSize:'12px' }}>Upload your ERP system file (e.g. Datafeed from ERP system.xlsx)</p>
+          </div>
+        </div>
+
+        {!result ? (
+          <form onSubmit={handleUpload}>
+            <div style={{ border:'2px dashed rgba(255,255,255,0.2)', borderRadius:'12px', padding:'24px', textAlign:'center', background:'rgba(255,255,255,0.02)', marginBottom:'20px' }}>
+              <Upload size={36} style={{ color:'#10b981', marginBottom:'12px' }} />
+              <div style={{ fontSize:'14px', fontWeight:600, marginBottom:'4px' }}>Select or Drag ERP Excel File (.xlsx, .xls)</div>
+              <div style={{ fontSize:'12px', color:'#94a3b8', marginBottom:'16px' }}>Existing products will be updated; new products will be created automatically.</div>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={e => setFile(e.target.files[0])}
+                style={{ display:'none' }}
+                id="erp-file-input"
+              />
+              <label htmlFor="erp-file-input" style={{ background:'rgba(59,130,246,0.15)', color:'#3b82f6', border:'1px solid rgba(59,130,246,0.3)', padding:'8px 18px', borderRadius:'8px', cursor:'pointer', fontSize:'13px', fontWeight:600, display:'inline-block' }}>
+                {file ? file.name : '📁 Browse Excel File'}
+              </label>
+            </div>
+
+            {error && (
+              <div style={{ background:'rgba(239,68,68,0.15)', border:'1px solid rgba(239,68,68,0.3)', color:'#ef4444', padding:'12px 16px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px' }}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            {uploading ? (
+              <div style={{ textAlign:'center', padding:'16px' }}>
+                <div style={{ display:'inline-block', width:'28px', height:'28px', border:'3px solid rgba(16,185,129,0.3)', borderTopColor:'#10b981', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
+                <p style={{ margin:'12px 0 0', color:'#10b981', fontSize:'13px', fontWeight:600 }}>Processing ERP file... Please wait (~20,000 products)</p>
+                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={!file}
+                className="admin-btn"
+                style={{ width:'100%', background: file ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.1)', color: file ? '#fff' : '#64748b', cursor: file ? 'pointer' : 'not-allowed', padding:'12px', fontSize:'14px', fontWeight:700, borderRadius:'8px' }}
+              >
+                🚀 Upload & Sync Products
+              </button>
+            )}
+          </form>
+        ) : (
+          <div>
+            <div style={{ background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:'12px', padding:'20px', marginBottom:'20px' }}>
+              <div style={{ color:'#10b981', fontWeight:700, fontSize:'16px', marginBottom:'12px' }}>✅ {result.message}</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', fontSize:'13px' }}>
+                <div style={{ background:'rgba(0,0,0,0.2)', padding:'10px', borderRadius:'8px' }}>
+                  <span style={{ color:'#94a3b8' }}>Total Processed:</span> <strong style={{ color:'#fff' }}>{result.total}</strong>
+                </div>
+                <div style={{ background:'rgba(0,0,0,0.2)', padding:'10px', borderRadius:'8px' }}>
+                  <span style={{ color:'#94a3b8' }}>Imported:</span> <strong style={{ color:'#10b981' }}>{result.imported}</strong>
+                </div>
+                <div style={{ background:'rgba(0,0,0,0.2)', padding:'10px', borderRadius:'8px' }}>
+                  <span style={{ color:'#94a3b8' }}>New Created:</span> <strong style={{ color:'#3b82f6' }}>{result.created}</strong>
+                </div>
+                <div style={{ background:'rgba(0,0,0,0.2)', padding:'10px', borderRadius:'8px' }}>
+                  <span style={{ color:'#94a3b8' }}>Existing Updated:</span> <strong style={{ color:'#f59e0b' }}>{result.updated}</strong>
+                </div>
+              </div>
+            </div>
+
+            <button onClick={onClose} className="admin-btn admin-btn-primary" style={{ width:'100%', padding:'10px' }}>
+              View Excel Data in Catalog
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 
 export default function AdminProducts() {
   const [data,    setData]    = useState({ data: [], last_page: 1, total: 0 })
@@ -436,6 +603,7 @@ export default function AdminProducts() {
   const [offerModal, setOfferModal] = useState(null)
   const [editModal, setEditModal]   = useState(null)
   const [detailModal, setDetailModal] = useState(null)
+  const [erpModalOpen, setErpModalOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -493,15 +661,25 @@ export default function AdminProducts() {
 
   return (
     <div>
-      {stockModal  && <StockModal product={stockModal} onClose={() => setStockModal(null)} onSaved={load} />}
-      {offerModal  && <OfferModal product={offerModal} onClose={() => setOfferModal(null)} onSaved={load} />}
-      {editModal   && <EditProductModal product={editModal} onClose={() => setEditModal(null)} onSaved={load} />}
-      {detailModal && <ProductDetailModal product={detailModal} onClose={() => setDetailModal(null)} />}
+      {stockModal   && <StockModal product={stockModal} onClose={() => setStockModal(null)} onSaved={load} />}
+      {offerModal   && <OfferModal product={offerModal} onClose={() => setOfferModal(null)} onSaved={load} />}
+      {editModal    && <EditProductModal product={editModal} onClose={() => setEditModal(null)} onSaved={load} />}
+      {detailModal  && <ProductDetailModal product={detailModal} onClose={() => setDetailModal(null)} />}
+      {erpModalOpen && <ErpImportModal onClose={() => setErpModalOpen(false)} onImportDone={load} />}
 
       <div className="admin-flex-between mb-6">
-        <div>
-          <h1 style={{ marginBottom: '0.25rem' }}>Products Management</h1>
-          <p style={{ color: '#94a3b8' }}>Manage your catalog and inventory</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ marginBottom: '0.25rem' }}>Products Management</h1>
+            <p style={{ color: '#94a3b8' }}>Manage your catalog and inventory</p>
+          </div>
+          <button
+            onClick={() => setErpModalOpen(true)}
+            className="admin-btn"
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', gap: '8px', padding: '10px 18px', fontWeight: 600 }}
+          >
+            <Upload size={18} /> Bulk ERP Import (.xlsx)
+          </button>
         </div>
         <button onClick={() => setEditModal(BLANK_PRODUCT)} className="admin-btn admin-btn-primary">
           <Plus size={18} /> Add Product

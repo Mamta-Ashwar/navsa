@@ -107,6 +107,7 @@ export default function ProductDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  const [caseQty, setCaseQty] = useState(0)
   const [layerQty, setLayerQty] = useState(0)
   const [palletQty, setPalletQty] = useState(0)
   const [barcodeTab, setBarcodeTab] = useState('ean')
@@ -293,7 +294,13 @@ export default function ProductDetail() {
       1
   )
 
+  const qtyType = String(product?.qty_desc || '').trim().toLowerCase()
+  const isCaseAllowed = qtyType === 'case'
+  const isLayerAllowed = qtyType !== 'pallet'
+  const isPalletAllowed = true
+
   const totalCases =
+    Number(caseQty || 0) +
     Number(layerQty || 0) * Number(product.layer_quantity || 0) +
     Number(palletQty || 0) * Number(product.pallet_quantity || 0)
 
@@ -390,6 +397,7 @@ export default function ProductDetail() {
     }
 
     const added = addToBasket(product, {
+      caseQty,
       layerQty,
       palletQty,
     })
@@ -397,12 +405,13 @@ export default function ProductDetail() {
     if (!added) {
       showNotice(
         'Unable to Add Product',
-        'Please select at least one Layer or Pallet.',
+        'Please select at least one Case, Layer, or Pallet.',
         'error'
       )
       return false
     }
 
+    setCaseQty(0)
     setLayerQty(0)
     setPalletQty(0)
     setJustAdded(true)
@@ -745,8 +754,14 @@ export default function ProductDetail() {
               <QtyRow
                 label="Case"
                 desc={`${unitsPerCase} Units per Case`}
-                qty={0}
-                disabled
+                qty={caseQty}
+                onMinus={() =>
+                  setCaseQty(current => Math.max(0, current - 1))
+                }
+                onPlus={() =>
+                  setCaseQty(current => current + 1)
+                }
+                disabled={!isCaseAllowed}
               />
 
               <QtyRow
@@ -761,7 +776,10 @@ export default function ProductDetail() {
                 onPlus={() =>
                   setLayerQty(current => current + 1)
                 }
-                disabled={Number(product.layer_quantity || 0) <= 0}
+                disabled={
+                  !isLayerAllowed ||
+                  Number(product.layer_quantity || 0) <= 0
+                }
               />
 
               <QtyRow
@@ -776,7 +794,10 @@ export default function ProductDetail() {
                 onPlus={() =>
                   setPalletQty(current => current + 1)
                 }
-                disabled={Number(product.pallet_quantity || 0) <= 0}
+                disabled={
+                  !isPalletAllowed ||
+                  Number(product.pallet_quantity || 0) <= 0
+                }
               />
 
               <div className="total-strip">

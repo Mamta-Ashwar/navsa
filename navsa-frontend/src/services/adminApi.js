@@ -50,6 +50,18 @@ export const restoreProduct = (id) => req('PATCH', `/products/${id}/restore`)
 export const hardDeleteProduct = (id) => req('DELETE', `/products/${id}`)
 export const clearAllOffers = () => req('PATCH', '/products/clear-offers')
 
+export const uploadErpExcel = async (formData) => {
+  const res = await fetch(`${BASE}/admin/import-erp`, {
+    method: 'POST',
+    headers: {
+      'X-Admin-Key': KEY,
+      Accept: 'application/json',
+    },
+    body: formData,
+  })
+  return readResponse(res)
+}
+
 // Users
 export const getUsers = (params = {}) => {
   const qs = new URLSearchParams(params).toString()
