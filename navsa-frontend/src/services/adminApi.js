@@ -1,4 +1,3 @@
-// // Central admin API helper — always injects X-Admin-Key header
 // const BASE = import.meta.env.VITE_API_URL || '/api'
 // const KEY = import.meta.env.VITE_ADMIN_KEY || 'navsa2024'
 
@@ -28,10 +27,8 @@
 //   return readResponse(res)
 // }
 
-// // Dashboard
 // export const getStats = () => req('GET', '/stats')
 
-// // Products
 // export const getProducts = (params = {}) => {
 //   const qs = new URLSearchParams(params).toString()
 //   return req('GET', `/products${qs ? `?${qs}` : ''}`)
@@ -50,7 +47,6 @@
 // export const hardDeleteProduct = (id) => req('DELETE', `/products/${id}`)
 // export const clearAllOffers = () => req('PATCH', '/products/clear-offers')
 
-// // Users
 // export const getUsers = (params = {}) => {
 //   const qs = new URLSearchParams(params).toString()
 //   return req('GET', `/users${qs ? `?${qs}` : ''}`)
@@ -58,28 +54,24 @@
 // export const updateUser = (id, data) => req('PUT', `/users/${id}`, data)
 // export const deleteUser = (id) => req('DELETE', `/users/${id}`)
 
-// // Suppliers
 // export const getSuppliers = (params = {}) => {
 //   const qs = new URLSearchParams(params).toString()
 //   return req('GET', `/suppliers${qs ? `?${qs}` : ''}`)
 // }
 // export const updateSupplier = (id, data) => req('PUT', `/suppliers/${id}`, data)
 
-// // Brands
 // export const getBrands = () => req('GET', '/brands')
 // export const createBrand = (brand_name) => req('POST', '/brands', { brand_name })
 // export const updateBrand = (id, data) => req('PUT', `/brands/${id}`, data)
 // export const softDeleteBrand = (id) => req('PATCH', `/brands/${id}/soft-delete`)
 // export const hardDeleteBrand = (id) => req('DELETE', `/brands/${id}`)
 
-// // Categories
 // export const getCategories = () => req('GET', '/categories')
 // export const createCategory = (category_name) => req('POST', '/categories', { category_name })
 // export const updateCategory = (id, data) => req('PUT', `/categories/${id}`, data)
 // export const softDeleteCategory = (id) => req('PATCH', `/categories/${id}/soft-delete`)
 // export const hardDeleteCategory = (id) => req('DELETE', `/categories/${id}`)
 
-// // Registrations
 // export const getRegistrations = (type = 'customer') => {
 //   const query = type ? `?type=${encodeURIComponent(type)}` : ''
 //   return req('GET', `/registrations${query}`)
@@ -87,7 +79,6 @@
 // export const approveRegistration = (id) => req('POST', `/registrations/${id}/approve`)
 // export const rejectRegistration = (id) => req('POST', `/registrations/${id}/reject`)
 
-// // PDFs
 // export const getPdfs = () => req('GET', '/pdfs')
 
 // export const uploadPdf = async (formData) => {
@@ -117,7 +108,6 @@
 // export const reorderPdfs = (ids) => req('POST', '/pdfs/reorder', { ids })
 // export const deletePdf = (id) => req('DELETE', `/pdfs/${id}`)
 
-// // Homepage banners
 // export const getBanners = (position = '') => {
 //   const query = position ? `?position=${encodeURIComponent(position)}` : ''
 //   return req('GET', `/banners${query}`)

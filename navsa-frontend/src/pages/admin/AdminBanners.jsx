@@ -13,7 +13,6 @@
 //   Eye,
 //   EyeOff,
 //   GripVertical,
-//   ImagePlus,
 //   Pencil,
 //   Plus,
 //   Save,
@@ -28,18 +27,11 @@
 //   { key: 'bottom', label: 'Bottom Banners' },
 // ]
 
-// const OVERLAYS = [
-//   { key: 'left', label: 'Left' },
-//   { key: 'center', label: 'Centre' },
-//   { key: 'right', label: 'Right' },
-// ]
-
 // const EMPTY_FORM = {
 //   position: 'hero',
 //   brand_id: '',
 //   link_url: '',
 //   button_text: 'See more',
-//   overlay_position: 'left',
 //   is_active: true,
 //   image: null,
 // }
@@ -80,7 +72,6 @@
 //     brand_id: source.brand_id ? String(source.brand_id) : '',
 //     link_url: safeText(source.link_url),
 //     button_text: safeText(source.button_text),
-//     overlay_position: source.overlay_position || 'left',
 //     is_active: source.is_active !== false,
 //     image: null,
 //   }
@@ -140,7 +131,7 @@
 //       payload.append('brand_id', form.brand_id || '')
 //       payload.append('link_url', form.link_url.trim())
 //       payload.append('button_text', form.button_text.trim())
-//       payload.append('overlay_position', form.overlay_position)
+//       payload.append('overlay_position', initial?.overlay_position || 'left')
 //       payload.append('is_active', form.is_active ? '1' : '0')
 //       if (form.image) payload.append('image', form.image)
 
@@ -206,13 +197,6 @@
 //           <input className="admin-input-field" value={form.button_text} onChange={event => set('button_text', event.target.value)} placeholder="See more" maxLength={80} style={{ width: '100%', color: COLORS.heading }} />
 //         </label>
 
-//         <label>
-//           <span style={labelStyle}>Button overlay position</span>
-//           <select className="admin-input-field" value={form.overlay_position} onChange={event => set('overlay_position', event.target.value)} style={{ width: '100%', color: COLORS.heading }}>
-//             {OVERLAYS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
-//           </select>
-//         </label>
-
 //         <label style={{ alignSelf: 'end', minHeight: '46px', display: 'flex', alignItems: 'center', gap: '10px', color: COLORS.body, fontWeight: 600 }}>
 //           <input type="checkbox" checked={Boolean(form.is_active)} onChange={event => set('is_active', event.target.checked)} />
 //           Show this banner on the website
@@ -261,6 +245,8 @@
 //   const [dragged, setDragged] = useState(null)
 //   const [dragOverId, setDragOverId] = useState(null)
 //   const [savingOrder, setSavingOrder] = useState(false)
+//   const formSectionRef = useRef(null)
+//   const scrollToEditFormRef = useRef(false)
 
 //   const load = useCallback(async () => {
 //     setLoading(true)
@@ -277,6 +263,21 @@
 
 //   useEffect(() => { load() }, [load])
 
+//   useEffect(() => {
+//     if (!showForm || !scrollToEditFormRef.current) return undefined
+
+//     scrollToEditFormRef.current = false
+
+//     const frame = window.requestAnimationFrame(() => {
+//       formSectionRef.current?.scrollIntoView({
+//         behavior: 'smooth',
+//         block: 'start',
+//       })
+//     })
+
+//     return () => window.cancelAnimationFrame(frame)
+//   }, [showForm, editing])
+
 //   const grouped = useMemo(() => Object.fromEntries(POSITIONS.map(position => [
 //     position.key,
 //     banners
@@ -291,6 +292,7 @@
 //   }
 
 //   const openEdit = (banner) => {
+//     scrollToEditFormRef.current = true
 //     setEditing(banner)
 //     setDefaultPosition(banner.position)
 //     setShowForm(true)
@@ -367,20 +369,22 @@
 //       <div className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(59,130,246,.35)' }}>
 //         <strong style={{ color: COLORS.heading }}>Homepage banner management</strong>
 //         <p style={{ color: COLORS.muted, margin: '6px 0 0' }}>
-//           Add any number of top, middle or bottom banners. Drag rows to change their order, or use the arrow buttons on mobile.
+//           Add any number of top, middle or bottom banners. Their website sequence is controlled only by the saved order below.
 //         </p>
 //         {savingOrder && <div style={{ color: '#93c5fd', marginTop: '8px', fontWeight: 700 }}>Saving banner order…</div>}
 //       </div>
 
 //       {showForm && (
-//         <BannerForm
-//           key={editing?.id || `new-${defaultPosition}`}
-//           initial={editing}
-//           defaultPosition={defaultPosition}
-//           brands={brands}
-//           onCancel={closeForm}
-//           onSaved={saved}
-//         />
+//         <div ref={formSectionRef} style={{ scrollMarginTop: '24px' }}>
+//           <BannerForm
+//             key={editing?.id || `new-${defaultPosition}`}
+//             initial={editing}
+//             defaultPosition={defaultPosition}
+//             brands={brands}
+//             onCancel={closeForm}
+//             onSaved={saved}
+//           />
+//         </div>
 //       )}
 
 //       {POSITIONS.map(position => {
@@ -413,7 +417,6 @@
 //                       <th>Brand</th>
 //                       <th>Link</th>
 //                       <th>Button</th>
-//                       <th>Overlay</th>
 //                       <th>Order</th>
 //                       <th>Website</th>
 //                       <th>Actions</th>
@@ -486,7 +489,6 @@
 //                           </td>
 
 //                           <td style={{ color: COLORS.body }}>{banner.button_text || '—'}</td>
-//                           <td style={{ color: COLORS.body, textTransform: 'capitalize' }}>{banner.overlay_position || 'left'}</td>
 //                           <td><span style={{ display: 'inline-grid', placeItems: 'center', width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(59,130,246,.16)', color: '#bfdbfe', fontWeight: 800 }}>{banner.sort_order}</span></td>
 //                           <td>
 //                             <span className={`admin-badge ${banner.is_active ? 'admin-badge-success' : 'admin-badge-danger'}`}>
@@ -528,7 +530,6 @@ import {
   Eye,
   EyeOff,
   GripVertical,
-  ImagePlus,
   Pencil,
   Plus,
   Save,
@@ -543,18 +544,11 @@ const POSITIONS = [
   { key: 'bottom', label: 'Bottom Banners' },
 ]
 
-const OVERLAYS = [
-  { key: 'left', label: 'Left' },
-  { key: 'center', label: 'Centre' },
-  { key: 'right', label: 'Right' },
-]
-
 const EMPTY_FORM = {
   position: 'hero',
   brand_id: '',
   link_url: '',
   button_text: 'See more',
-  overlay_position: 'left',
   is_active: true,
   image: null,
 }
@@ -587,16 +581,17 @@ function brandName(banner) {
   return banner.brand_name || banner.brand?.brand_name || 'General / no brand'
 }
 
-function normaliseForm(source = {}, position = 'hero') {
+function normaliseForm(source, position = 'hero') {
+  const safeSource = source && typeof source === 'object' ? source : {}
+
   return {
     ...EMPTY_FORM,
-    ...source,
-    position: source.position || position,
-    brand_id: source.brand_id ? String(source.brand_id) : '',
-    link_url: safeText(source.link_url),
-    button_text: safeText(source.button_text),
-    overlay_position: source.overlay_position || 'left',
-    is_active: source.is_active !== false,
+    ...safeSource,
+    position: safeSource.position || position,
+    brand_id: safeSource.brand_id ? String(safeSource.brand_id) : '',
+    link_url: safeText(safeSource.link_url),
+    button_text: safeText(safeSource.button_text),
+    is_active: safeSource.is_active !== false,
     image: null,
   }
 }
@@ -655,7 +650,7 @@ function BannerForm({ initial, defaultPosition, brands, onCancel, onSaved }) {
       payload.append('brand_id', form.brand_id || '')
       payload.append('link_url', form.link_url.trim())
       payload.append('button_text', form.button_text.trim())
-      payload.append('overlay_position', form.overlay_position)
+      payload.append('overlay_position', initial?.overlay_position || 'left')
       payload.append('is_active', form.is_active ? '1' : '0')
       if (form.image) payload.append('image', form.image)
 
@@ -719,13 +714,6 @@ function BannerForm({ initial, defaultPosition, brands, onCancel, onSaved }) {
         <label>
           <span style={labelStyle}>Button text</span>
           <input className="admin-input-field" value={form.button_text} onChange={event => set('button_text', event.target.value)} placeholder="See more" maxLength={80} style={{ width: '100%', color: COLORS.heading }} />
-        </label>
-
-        <label>
-          <span style={labelStyle}>Button overlay position</span>
-          <select className="admin-input-field" value={form.overlay_position} onChange={event => set('overlay_position', event.target.value)} style={{ width: '100%', color: COLORS.heading }}>
-            {OVERLAYS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
-          </select>
         </label>
 
         <label style={{ alignSelf: 'end', minHeight: '46px', display: 'flex', alignItems: 'center', gap: '10px', color: COLORS.body, fontWeight: 600 }}>
@@ -900,7 +888,7 @@ export default function AdminBanners() {
       <div className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(59,130,246,.35)' }}>
         <strong style={{ color: COLORS.heading }}>Homepage banner management</strong>
         <p style={{ color: COLORS.muted, margin: '6px 0 0' }}>
-          Add any number of top, middle or bottom banners. Drag rows to change their order, or use the arrow buttons on mobile.
+          Add any number of top, middle or bottom banners. Their website sequence is controlled only by the saved order below.
         </p>
         {savingOrder && <div style={{ color: '#93c5fd', marginTop: '8px', fontWeight: 700 }}>Saving banner order…</div>}
       </div>
@@ -948,7 +936,6 @@ export default function AdminBanners() {
                       <th>Brand</th>
                       <th>Link</th>
                       <th>Button</th>
-                      <th>Overlay</th>
                       <th>Order</th>
                       <th>Website</th>
                       <th>Actions</th>
@@ -1021,7 +1008,6 @@ export default function AdminBanners() {
                           </td>
 
                           <td style={{ color: COLORS.body }}>{banner.button_text || '—'}</td>
-                          <td style={{ color: COLORS.body, textTransform: 'capitalize' }}>{banner.overlay_position || 'left'}</td>
                           <td><span style={{ display: 'inline-grid', placeItems: 'center', width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(59,130,246,.16)', color: '#bfdbfe', fontWeight: 800 }}>{banner.sort_order}</span></td>
                           <td>
                             <span className={`admin-badge ${banner.is_active ? 'admin-badge-success' : 'admin-badge-danger'}`}>
