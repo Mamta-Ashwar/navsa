@@ -10,10 +10,12 @@ use App\Models\Supplier;
 use App\Models\SubCategory;
 use App\Models\User;
 use App\Models\Pdf;
+use App\Models\HomeBanner;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
@@ -69,8 +71,6 @@ class AdminController extends Controller
         return response()->json(['message' => 'Logged out successfully']);
     }
 
-    // ── Dashboard ─────────────────────────────────────────────────────────────
-
     public function stats(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
@@ -93,15 +93,44 @@ class AdminController extends Controller
         ]);
     }
 
-    // Registrations
     public function getRegistrations(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
 
-        $registrations = User::with(['customerDetail', 'supplierDetail'])
-            ->where('status', 'pending')
+        $type = strtolower(trim((string) $request->query('type', 'all')));
+
+        $query = User::with(['customerDetail', 'supplierDetail'])
+            ->where('status', 'pending');
+
+        if ($type === 'supplier') {
+            $query->where(function ($registrationQuery) {
+                $registrationQuery
+                    ->whereHas('supplierDetail')
+                    ->orWhere('role', 'supplier');
+            });
+        } elseif ($type === 'customer') {
+            $query->where(function ($registrationQuery) {
+                $registrationQuery
+                    ->whereHas('customerDetail')
+                    ->orWhere(function ($legacyCustomerQuery) {
+                        $legacyCustomerQuery
+                            ->where('role', 'customer')
+                            ->whereDoesntHave('supplierDetail');
+                    });
+            });
+        }
+
+        $registrations = $query
             ->orderBy('created_at', 'desc')
             ->get();
+
+        $registrations->each(function ($registration) {
+            $registration->setAttribute(
+                'registration_type',
+                $registration->supplierDetail ? 'supplier' : 'customer'
+            );
+        });
+
         return response()->json($registrations);
     }
 
@@ -109,13 +138,14 @@ class AdminController extends Controller
     {
         if (!$this->auth($request)) return $this->deny();
 
-        $user = User::findOrFail($id);
+        $user = User::with(['customerDetail', 'supplierDetail'])->findOrFail($id);
         if ($user->status !== 'pending') {
             return response()->json(['error' => 'User is not pending approval'], 400);
         }
 
         $user->status = 'approved';
         $user->approved_at = now();
+        $user->role = $user->supplierDetail ? 'supplier' : 'customer';
         $user->save();
 
         return response()->json(['message' => 'Registration approved successfully', 'user' => $user]);
@@ -125,18 +155,17 @@ class AdminController extends Controller
     {
         if (!$this->auth($request)) return $this->deny();
 
-        $user = User::findOrFail($id);
+        $user = User::with(['customerDetail', 'supplierDetail'])->findOrFail($id);
         if ($user->status !== 'pending') {
             return response()->json(['error' => 'User is not pending approval'], 400);
         }
 
         $user->status = 'rejected';
+        $user->role = $user->supplierDetail ? 'supplier' : 'customer';
         $user->save();
 
         return response()->json(['message' => 'Registration rejected successfully', 'user' => $user]);
     }
-
-    // ── Products ──────────────────────────────────────────────────────────────
 
     public function products(Request $request)
     {
@@ -144,7 +173,6 @@ class AdminController extends Controller
 
         $q = Product::with(['brand', 'category']);
 
-        // Exclude hard-deleted by default unless asked
         if (!$request->filled('show_deleted')) {
             $q->where('deleted', false);
         }
@@ -289,7 +317,6 @@ class AdminController extends Controller
         return response()->json($product->fresh());
     }
 
-    // Soft-delete a product (marks deleted=true)
     public function softDeleteProduct(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
@@ -298,7 +325,6 @@ class AdminController extends Controller
         return response()->json(['id' => $id, 'deleted' => true]);
     }
 
-    // Hard-delete a product (permanent)
     public function hardDeleteProduct(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
@@ -306,7 +332,6 @@ class AdminController extends Controller
         return response()->json(['id' => $id, 'destroyed' => true]);
     }
 
-    // Restore a soft-deleted product
     public function restoreProduct(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
@@ -315,34 +340,341 @@ class AdminController extends Controller
         return response()->json(['id' => $id, 'deleted' => false]);
     }
 
-    // ── Users ─────────────────────────────────────────────────────────────────
-
     public function users(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
-        $q = User::query();
-        if ($request->filled('status')) $q->where('status', $request->status);
+
+        $type = strtolower(trim((string) $request->query('type', 'all')));
+        $q = User::with(['customerDetail', 'supplierDetail']);
+
+        if ($type === 'customer') {
+            $q->where('status', '!=', 'pending')
+                ->whereDoesntHave('supplierDetail')
+                ->where(function ($customerQuery) {
+                    $customerQuery
+                        ->whereHas('customerDetail')
+                        ->orWhere('role', 'customer');
+                });
+        } elseif ($type === 'supplier') {
+            $q->where('status', '!=', 'pending')
+                ->where(function ($supplierQuery) {
+                    $supplierQuery
+                        ->whereHas('supplierDetail')
+                        ->orWhere('role', 'supplier');
+                });
+        }
+
+        if ($request->filled('status')) {
+            $q->where('status', $request->status);
+        }
+
         if ($request->filled('search')) {
-            $s = $request->search;
+            $s = trim((string) $request->search);
             $q->where(function ($sub) use ($s) {
                 $sub->where('name', 'like', "%$s%")
                     ->orWhere('email', 'like', "%$s%")
                     ->orWhere('company_name', 'like', "%$s%");
             });
         }
+
         return $q->orderBy('created_at', 'desc')->paginate(25);
+    }
+
+    public function suppliers(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $q = User::with('supplierDetail')
+            ->where('status', '!=', 'pending')
+            ->where(function ($supplierQuery) {
+                $supplierQuery
+                    ->whereHas('supplierDetail')
+                    ->orWhere('role', 'supplier');
+            });
+
+        if ($request->filled('status')) {
+            $q->where('status', $request->status);
+        }
+
+        if ($request->filled('search')) {
+            $s = trim((string) $request->search);
+            $q->where(function ($searchQuery) use ($s) {
+                $searchQuery
+                    ->where('name', 'like', "%$s%")
+                    ->orWhere('email', 'like', "%$s%")
+                    ->orWhere('company_name', 'like', "%$s%")
+                    ->orWhere('phone', 'like', "%$s%")
+                    ->orWhereHas('supplierDetail', function ($detailQuery) use ($s) {
+                        $detailQuery
+                            ->where('first_name', 'like', "%$s%")
+                            ->orWhere('last_name', 'like', "%$s%")
+                            ->orWhere('company_name', 'like', "%$s%")
+                            ->orWhere('country', 'like', "%$s%")
+                            ->orWhere('business_phone', 'like', "%$s%")
+                            ->orWhere('mobile_phone', 'like', "%$s%");
+                    });
+            });
+        }
+
+        return $q->orderByRaw('approved_at IS NULL')
+            ->orderBy('approved_at', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->paginate(25);
     }
 
     public function updateUser(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        $user = User::findOrFail($id);
-        $data = $request->only(['status', 'company_name', 'phone']);
-        if (isset($data['status']) && $data['status'] === 'approved') {
-            $data['approved_at'] = now();
+
+        $user = User::with('customerDetail')->findOrFail($id);
+        $detailProvided = $request->has('customer_detail');
+        $detailInput = $request->input('customer_detail', []);
+        $isUkCustomer = $detailProvided && (
+            strtoupper(trim((string) ($detailInput['region'] ?? ''))) === 'UK'
+            || strcasecmp(trim((string) ($detailInput['country'] ?? '')), 'United Kingdom') === 0
+        );
+        $sameAsBilling = $detailProvided
+            ? filter_var($detailInput['same_as_billing'] ?? true, FILTER_VALIDATE_BOOLEAN)
+            : true;
+        $whatsappOffersOptIn = $detailProvided
+            ? filter_var($detailInput['whatsapp_offers_opt_in'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            : false;
+
+        $validated = $request->validate([
+            'email' => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'company_name' => ['sometimes', 'nullable', 'string', 'max:200'],
+            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'frozen'])],
+
+            'customer_detail' => ['sometimes', 'array'],
+            'customer_detail.first_name' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.last_name' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.region' => ['required_with:customer_detail', Rule::in(['UK', 'Europe', 'International'])],
+            'customer_detail.country' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.position' => ['nullable', 'string', 'max:255'],
+            'customer_detail.company_registration_number' => ['nullable', 'string', 'max:100'],
+            'customer_detail.vat_number' => [Rule::requiredIf($isUkCustomer), 'nullable', 'string', 'max:100'],
+            'customer_detail.customer_group' => ['nullable', Rule::in(['Group 1', 'Group 2'])],
+            'customer_detail.trading_years' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.business_nature' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.website' => ['nullable', 'string', 'max:255'],
+            'customer_detail.director_name' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.currency' => ['required_with:customer_detail', Rule::in(['GBP', 'EURO', 'DOLLAR'])],
+            'customer_detail.registered_phone' => ['required_with:customer_detail', 'string', 'max:30'],
+            'customer_detail.mobile' => [Rule::requiredIf($detailProvided && $whatsappOffersOptIn), 'nullable', 'string', 'max:30'],
+            'customer_detail.whatsapp_offers_opt_in' => ['nullable', 'boolean'],
+
+            'customer_detail.address_line_1' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.address_line_2' => ['nullable', 'string', 'max:255'],
+            'customer_detail.city' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.province' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.zip_code' => ['required_with:customer_detail', 'string', 'max:255'],
+
+            'customer_detail.same_as_billing' => ['required_with:customer_detail', 'boolean'],
+            'customer_detail.shipping_address_line_1' => [Rule::requiredIf($detailProvided && !$sameAsBilling), 'nullable', 'string', 'max:255'],
+            'customer_detail.shipping_address_line_2' => ['nullable', 'string', 'max:255'],
+            'customer_detail.shipping_city' => [Rule::requiredIf($detailProvided && !$sameAsBilling), 'nullable', 'string', 'max:255'],
+            'customer_detail.shipping_province' => [Rule::requiredIf($detailProvided && !$sameAsBilling), 'nullable', 'string', 'max:255'],
+            'customer_detail.shipping_zip_code' => [Rule::requiredIf($detailProvided && !$sameAsBilling), 'nullable', 'string', 'max:255'],
+            'customer_detail.shipping_country' => [Rule::requiredIf($detailProvided && !$sameAsBilling), 'nullable', 'string', 'max:255'],
+            'customer_detail.shipping_telephone' => [Rule::requiredIf($detailProvided && !$sameAsBilling), 'nullable', 'string', 'max:50'],
+
+            'customer_detail.account_name' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.account_email' => ['required_with:customer_detail', 'email', 'max:255'],
+            'customer_detail.other_wholesalers' => ['nullable', Rule::in(['Yes', 'No'])],
+            'customer_detail.average_order_value' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.turnover' => ['required_with:customer_detail', 'string', 'max:255'],
+            'customer_detail.import_full_containers' => ['required_with:customer_detail', Rule::in(['Containers', 'Pallets', 'Cases'])],
+            'customer_detail.brands_interested' => ['required_with:customer_detail', 'string'],
+            'customer_detail.categories_interested' => ['nullable', 'array'],
+            'customer_detail.categories_interested.*' => ['string', 'max:255'],
+            'customer_detail.eori_number' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        return DB::transaction(function () use ($user, $validated, $detailProvided, $isUkCustomer, $sameAsBilling) {
+            if (array_key_exists('email', $validated)) {
+                $user->email = trim($validated['email']);
+            }
+
+            if (array_key_exists('company_name', $validated)) {
+                $user->company_name = trim((string) $validated['company_name']) ?: null;
+            }
+
+            if (array_key_exists('status', $validated)) {
+                $user->status = $validated['status'];
+                if ($validated['status'] === 'approved' && !$user->approved_at) {
+                    $user->approved_at = now();
+                }
+            }
+
+            if ($detailProvided) {
+                if (!$user->customerDetail) {
+                    abort(422, 'This user does not have customer details to edit.');
+                }
+
+                $incoming = $validated['customer_detail'];
+                $nullableText = static function ($value) {
+                    $value = trim((string) ($value ?? ''));
+                    return $value === '' ? null : $value;
+                };
+
+                $detailData = [
+                    'first_name' => trim($incoming['first_name']),
+                    'last_name' => trim($incoming['last_name']),
+                    'region' => $incoming['region'],
+                    'country' => trim($incoming['country']),
+                    'position' => $nullableText($incoming['position'] ?? null),
+                    'company_registration_number' => $nullableText($incoming['company_registration_number'] ?? null),
+                    'vat_number' => $isUkCustomer ? $nullableText($incoming['vat_number'] ?? null) : null,
+                    'customer_group' => $incoming['customer_group'] ?? null,
+                    'trading_years' => $incoming['trading_years'],
+                    'business_nature' => $incoming['business_nature'],
+                    'website' => $nullableText($incoming['website'] ?? null),
+                    'director_name' => trim($incoming['director_name']),
+                    'currency' => $incoming['currency'],
+                    'registered_phone' => trim($incoming['registered_phone']),
+                    'mobile' => $nullableText($incoming['mobile'] ?? null),
+                    'whatsapp_offers_opt_in' => (bool) ($incoming['whatsapp_offers_opt_in'] ?? false),
+                    'address_line_1' => trim($incoming['address_line_1']),
+                    'address_line_2' => $nullableText($incoming['address_line_2'] ?? null),
+                    'city' => trim($incoming['city']),
+                    'province' => trim($incoming['province']),
+                    'zip_code' => trim($incoming['zip_code']),
+                    'account_name' => trim($incoming['account_name']),
+                    'account_email' => trim($incoming['account_email']),
+                    'other_wholesalers' => $incoming['other_wholesalers'] ?? null,
+                    'average_order_value' => $incoming['average_order_value'],
+                    'turnover' => $incoming['turnover'],
+                    'import_full_containers' => $incoming['import_full_containers'],
+                    'brands_interested' => trim($incoming['brands_interested']),
+                    'categories_interested' => $incoming['categories_interested'] ?? [],
+                    'eori_number' => $nullableText($incoming['eori_number'] ?? null),
+                    'same_as_billing' => $sameAsBilling,
+                    'shipping_address_line_1' => $sameAsBilling ? null : trim($incoming['shipping_address_line_1']),
+                    'shipping_address_line_2' => $sameAsBilling ? null : $nullableText($incoming['shipping_address_line_2'] ?? null),
+                    'shipping_city' => $sameAsBilling ? null : trim($incoming['shipping_city']),
+                    'shipping_province' => $sameAsBilling ? null : trim($incoming['shipping_province']),
+                    'shipping_zip_code' => $sameAsBilling ? null : trim($incoming['shipping_zip_code']),
+                    'shipping_country' => $sameAsBilling ? null : trim($incoming['shipping_country']),
+                    'shipping_telephone' => $sameAsBilling ? null : trim($incoming['shipping_telephone']),
+                ];
+
+                $user->customerDetail->update($detailData);
+                $user->name = trim($detailData['first_name'] . ' ' . $detailData['last_name']);
+                $user->phone = $detailData['registered_phone'] ?: $detailData['mobile'];
+            }
+
+            $user->save();
+
+            return response()->json(
+                $user->fresh()->load(['customerDetail', 'supplierDetail'])
+            );
+        });
+    }
+
+    public function updateSupplier(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $user = User::with('supplierDetail')->findOrFail($id);
+
+        if (!$user->supplierDetail) {
+            return response()->json([
+                'message' => 'This user does not have supplier details.',
+            ], 422);
         }
-        $user->update($data);
-        return response()->json($user->fresh());
+
+        $detailProvided = $request->has('supplier_detail');
+
+        $validated = $request->validate([
+            'email' => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'company_name' => ['sometimes', 'required', 'string', 'max:255'],
+            'status' => ['sometimes', Rule::in(['approved', 'rejected', 'frozen'])],
+
+            'supplier_detail' => ['sometimes', 'array'],
+            'supplier_detail.first_name' => ['required_with:supplier_detail', 'string', 'max:255'],
+            'supplier_detail.last_name' => ['required_with:supplier_detail', 'string', 'max:255'],
+            'supplier_detail.mobile_phone' => ['nullable', 'string', 'max:50'],
+            'supplier_detail.business_phone' => ['nullable', 'string', 'max:50'],
+            'supplier_detail.company_name' => ['required_with:supplier_detail', 'string', 'max:255'],
+            'supplier_detail.company_type' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.company_registration_number' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.website_url' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.address_line_1' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.address_line_2' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.city' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.county' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.country' => ['nullable', 'string', 'max:255'],
+            'supplier_detail.postcode' => ['nullable', 'string', 'max:50'],
+            'supplier_detail.additional_comments' => ['nullable', 'string'],
+            'supplier_detail.categories_supplied' => ['nullable', 'array'],
+            'supplier_detail.categories_supplied.*' => ['string', 'max:255'],
+            'supplier_detail.contact_time' => ['nullable', 'array'],
+            'supplier_detail.contact_time.*' => ['string', 'max:255'],
+            'supplier_detail.consent_news' => ['nullable', 'boolean'],
+            'supplier_detail.consent_marketing' => ['nullable', 'boolean'],
+        ]);
+
+        return DB::transaction(function () use ($user, $validated, $detailProvided) {
+            $nullableText = static function ($value) {
+                $value = trim((string) ($value ?? ''));
+                return $value === '' ? null : $value;
+            };
+
+            if (array_key_exists('email', $validated)) {
+                $user->email = trim($validated['email']);
+            }
+
+            if (array_key_exists('company_name', $validated)) {
+                $user->company_name = trim($validated['company_name']);
+            }
+
+            if (array_key_exists('status', $validated)) {
+                $user->status = $validated['status'];
+
+                if ($validated['status'] === 'approved' && !$user->approved_at) {
+                    $user->approved_at = now();
+                }
+            }
+
+            if ($detailProvided) {
+                $incoming = $validated['supplier_detail'];
+
+                $detailData = [
+                    'first_name' => trim($incoming['first_name']),
+                    'last_name' => trim($incoming['last_name']),
+                    'email_address' => $user->email,
+                    'mobile_phone' => $nullableText($incoming['mobile_phone'] ?? null),
+                    'business_phone' => $nullableText($incoming['business_phone'] ?? null),
+                    'company_name' => trim($incoming['company_name']),
+                    'company_type' => $nullableText($incoming['company_type'] ?? null),
+                    'company_registration_number' => $nullableText($incoming['company_registration_number'] ?? null),
+                    'website_url' => $nullableText($incoming['website_url'] ?? null),
+                    'address_line_1' => $nullableText($incoming['address_line_1'] ?? null),
+                    'address_line_2' => $nullableText($incoming['address_line_2'] ?? null),
+                    'city' => $nullableText($incoming['city'] ?? null),
+                    'county' => $nullableText($incoming['county'] ?? null),
+                    'country' => $nullableText($incoming['country'] ?? null),
+                    'postcode' => $nullableText($incoming['postcode'] ?? null),
+                    'additional_comments' => $nullableText($incoming['additional_comments'] ?? null),
+                    'categories_supplied' => $incoming['categories_supplied'] ?? [],
+                    'contact_time' => $incoming['contact_time'] ?? [],
+                    'consent_news' => (bool) ($incoming['consent_news'] ?? false),
+                    'consent_marketing' => (bool) ($incoming['consent_marketing'] ?? false),
+                ];
+
+                $user->supplierDetail->update($detailData);
+                $user->name = trim($detailData['first_name'] . ' ' . $detailData['last_name']);
+                $user->company_name = $detailData['company_name'];
+                $user->phone = $detailData['mobile_phone'] ?: $detailData['business_phone'];
+            }
+
+            $user->role = 'supplier';
+            $user->save();
+
+            return response()->json(
+                $user->fresh()->load('supplierDetail')
+            );
+        });
     }
 
     public function deleteUser(Request $request, $id)
@@ -351,8 +683,6 @@ class AdminController extends Controller
         User::findOrFail($id)->delete();
         return response()->json(['id' => $id, 'destroyed' => true]);
     }
-
-    // ── Brands ────────────────────────────────────────────────────────────────
 
     public function brands(Request $request)
     {
@@ -393,8 +723,6 @@ class AdminController extends Controller
         return response()->json(['id' => $id, 'destroyed' => true]);
     }
 
-    // ── Categories ────────────────────────────────────────────────────────────
-
     public function categories(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
@@ -434,7 +762,234 @@ class AdminController extends Controller
         return response()->json(['id' => $id, 'destroyed' => true]);
     }
 
-    // ── PDFs ──────────────────────────────────────────────────────────────────
+    private function normaliseBannerSortOrder(?string $position = null): void
+    {
+        $positions = $position ? [$position] : ['hero', 'middle', 'bottom'];
+
+        foreach ($positions as $currentPosition) {
+            $ids = HomeBanner::query()
+                ->where('position', $currentPosition)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->pluck('id');
+
+            foreach ($ids as $index => $id) {
+                HomeBanner::whereKey($id)->update(['sort_order' => $index + 1]);
+            }
+        }
+    }
+
+    private function deleteManagedBannerImage(?string $path): void
+    {
+        if (!$path || str_starts_with($path, '/') || preg_match('/^https?:\/\//i', $path)) {
+            return;
+        }
+
+        Storage::disk('public')->delete($path);
+    }
+
+    public function publicHomeBanners(Request $request)
+    {
+        $position = $request->query('position');
+
+        if ($position !== null && !in_array($position, ['hero', 'middle', 'bottom'], true)) {
+            return response()->json(['error' => 'Invalid banner position.'], 422);
+        }
+
+        $query = HomeBanner::query()
+            ->with('brand:id,brand_name')
+            ->where('is_active', true);
+
+        if ($position) {
+            $query->where('position', $position);
+        }
+
+        return response()->json(
+            $query
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get()
+        );
+    }
+
+    public function banners(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $position = $request->query('position');
+
+        if ($position !== null && !in_array($position, ['hero', 'middle', 'bottom'], true)) {
+            return response()->json(['error' => 'Invalid banner position.'], 422);
+        }
+
+        $query = HomeBanner::query()->with('brand:id,brand_name');
+
+        if ($position) {
+            $query->where('position', $position);
+        }
+
+        return response()->json(
+            $query
+                ->orderByRaw("FIELD(position, 'hero', 'middle', 'bottom')")
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get()
+        );
+    }
+
+    public function uploadBanner(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $request->validate([
+            'position' => 'required|in:hero,middle,bottom',
+            'brand_id' => 'nullable|integer|exists:brands,id',
+            'link_url' => 'nullable|string|max:2048',
+            'button_text' => 'nullable|string|max:80',
+            'overlay_position' => 'required|in:left,center,right',
+            'is_active' => 'nullable|boolean',
+            'image' => 'required|image|mimes:jpeg,jpg,png,webp|max:10240',
+        ]);
+
+        $path = $request->file('image')->store('banners/' . $validated['position'], 'public');
+        $nextOrder = ((int) HomeBanner::where('position', $validated['position'])->max('sort_order')) + 1;
+
+        $banner = HomeBanner::create([
+            'position' => $validated['position'],
+            'brand_id' => $validated['brand_id'] ?? null,
+            'image_path' => $path,
+            'link_url' => trim($validated['link_url'] ?? '') ?: null,
+            'button_text' => trim($validated['button_text'] ?? '') ?: null,
+            'overlay_position' => $validated['overlay_position'],
+            'sort_order' => $nextOrder,
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        $this->normaliseBannerSortOrder($banner->position);
+
+        return response()->json($banner->fresh()->load('brand:id,brand_name'), 201);
+    }
+
+    public function updateBanner(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $banner = HomeBanner::findOrFail($id);
+        $oldPosition = $banner->position;
+
+        $validated = $request->validate([
+            'position' => 'sometimes|required|in:hero,middle,bottom',
+            'brand_id' => 'nullable|integer|exists:brands,id',
+            'link_url' => 'nullable|string|max:2048',
+            'button_text' => 'nullable|string|max:80',
+            'overlay_position' => 'sometimes|required|in:left,center,right',
+            'is_active' => 'nullable|boolean',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+        ]);
+
+        $nextPosition = $validated['position'] ?? $banner->position;
+        $data = [];
+
+        if (array_key_exists('position', $validated)) {
+            $data['position'] = $nextPosition;
+        }
+        if ($request->has('brand_id')) {
+            $data['brand_id'] = $validated['brand_id'] ?? null;
+        }
+        if ($request->has('link_url')) {
+            $data['link_url'] = trim($validated['link_url'] ?? '') ?: null;
+        }
+        if ($request->has('button_text')) {
+            $data['button_text'] = trim($validated['button_text'] ?? '') ?: null;
+        }
+        if (array_key_exists('overlay_position', $validated)) {
+            $data['overlay_position'] = $validated['overlay_position'];
+        }
+        if ($request->has('is_active')) {
+            $data['is_active'] = $request->boolean('is_active');
+        }
+
+        if ($nextPosition !== $oldPosition) {
+            $data['sort_order'] = ((int) HomeBanner::where('position', $nextPosition)->max('sort_order')) + 1;
+        }
+
+        if ($request->hasFile('image')) {
+            $newPath = $request->file('image')->store('banners/' . $nextPosition, 'public');
+            $this->deleteManagedBannerImage($banner->image_path);
+            $data['image_path'] = $newPath;
+        }
+
+        $banner->update($data);
+
+        $this->normaliseBannerSortOrder($oldPosition);
+        if ($nextPosition !== $oldPosition) {
+            $this->normaliseBannerSortOrder($nextPosition);
+        }
+
+        return response()->json($banner->fresh()->load('brand:id,brand_name'));
+    }
+
+    public function reorderBanners(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $request->validate([
+            'position' => 'required|in:hero,middle,bottom',
+            'ids' => 'required|array',
+            'ids.*' => 'required|integer|distinct|exists:home_banners,id',
+        ]);
+
+        $existingIds = HomeBanner::where('position', $validated['position'])
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $submittedIds = collect($validated['ids'])
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($existingIds !== $submittedIds) {
+            return response()->json([
+                'error' => 'The reorder list must contain every banner from this section exactly once.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['ids'] as $index => $id) {
+                HomeBanner::whereKey($id)
+                    ->where('position', $validated['position'])
+                    ->update(['sort_order' => $index + 1]);
+            }
+        });
+
+        return response()->json([
+            'banners' => HomeBanner::with('brand:id,brand_name')
+                ->where('position', $validated['position'])
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get(),
+        ]);
+    }
+
+    public function deleteBanner(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $banner = HomeBanner::findOrFail($id);
+        $position = $banner->position;
+
+        $this->deleteManagedBannerImage($banner->image_path);
+        $banner->delete();
+        $this->normaliseBannerSortOrder($position);
+
+        return response()->json(['id' => (int) $id, 'destroyed' => true]);
+    }
 
     private function normaliseDealSortOrder(): void
     {

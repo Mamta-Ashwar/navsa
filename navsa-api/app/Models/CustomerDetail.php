@@ -16,12 +16,18 @@ class CustomerDetail extends Model
         'region',
         'country',
         'position',
+        'company_registration_number',
+        'vat_number',
+        'customer_group',
         'trading_years',
         'business_nature',
         'website',
         'director_name',
         'currency',
+        'registered_phone',
         'mobile',
+        'whatsapp_offers_phone',
+        'whatsapp_offers_opt_in',
         'address_line_1',
         'address_line_2',
         'city',
@@ -42,10 +48,14 @@ class CustomerDetail extends Model
         'shipping_city',
         'shipping_province',
         'shipping_zip_code',
+        'shipping_country',
+        'shipping_telephone',
     ];
 
     protected $casts = [
         'categories_interested' => 'array',
+        'same_as_billing' => 'boolean',
+        'whatsapp_offers_opt_in' => 'boolean',
     ];
 
     public function user()

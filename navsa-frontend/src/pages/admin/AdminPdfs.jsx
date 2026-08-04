@@ -16,6 +16,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
+import AdminBanners from './AdminBanners'
 
 const EMPTY_FORM = {
   title: '',
@@ -30,6 +31,8 @@ const EMPTY_FORM = {
 }
 
 const TABS = [
+  { key: 'deal', label: 'Deals & Promotion PDFs' },
+  { key: 'banner', label: 'Banners' },
   { key: 'deal', label: 'Deals & Promotion' },
   { key: 'banner', label: 'Banner' },
   { key: 'other', label: 'Other Documents' },
@@ -203,6 +206,8 @@ function PdfForm({ initial, activeDealCount, onCancel, onSaved }) {
             onChange={(event) => set('type', event.target.value)}
             style={{ width: '100%', color: COLORS.heading }}
           >
+            <option value="deal">Deal / Promotion PDF</option>
+            <option value="other">Other Document</option>
             <option value="deal">Deals & Promotion</option>
             <option value="banner">Banner</option>
             <option value="other">Other Documents</option>
@@ -462,14 +467,16 @@ export default function AdminPdfs() {
     <div style={{ color: COLORS.body }}>
       <div className="admin-flex-between mb-6">
         <div>
-          <h1 style={{ marginBottom: '0.25rem', color: COLORS.heading }}>PDFs & Manuals</h1>
+          <h1 style={{ marginBottom: '0.25rem', color: COLORS.heading }}>PDFs & Banners</h1>
           <p style={{ color: COLORS.muted }}>
-            Manage deal brochures and downloadable documents without changing website code.
+            Manage deal brochures, homepage banners and other documents without changing website code.
           </p>
         </div>
-        <button onClick={openCreate} className="admin-btn admin-btn-primary">
-          <Plus size={18} /> Add PDF
-        </button>
+        {tab !== 'banner' && (
+          <button onClick={openCreate} className="admin-btn admin-btn-primary">
+            <Plus size={18} /> Add PDF
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -488,7 +495,7 @@ export default function AdminPdfs() {
         ))}
       </div>
 
-      {showForm && (
+      {tab !== 'banner' && showForm && (
         <PdfForm
           key={editing?.id || `new-${tab}`}
           initial={editing || { ...EMPTY_FORM, type: tab }}
@@ -498,6 +505,10 @@ export default function AdminPdfs() {
         />
       )}
 
+      {tab === 'banner' ? (
+        <AdminBanners />
+      ) : (
+        <>
       {tab === 'deal' && (
         <div
           className="glass-panel"
@@ -680,6 +691,8 @@ export default function AdminPdfs() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }

@@ -11,31 +11,25 @@ use App\Http\Controllers\Api\ShippingController;
 use App\Http\Controllers\Api\CustomerRegistrationController;
 use App\Http\Controllers\Api\SupplierRegistrationController;
 
-
-//routes 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-// Products (public)
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{id}', [ProductController::class, 'show']);
 
-// Categories
 Route::get('/categories', function () {
     return Category::where('status', 1)
         ->orderBy('category_name')
         ->get(['id', 'category_name']);
 });
 
-// Sub-categories (all)
 Route::get('/sub-categories', function () {
     return SubCategory::where('status', 1)
         ->orderBy('sub_category_name')
         ->get(['id', 'category_id', 'sub_category_name', 'group_code']);
 });
 
-// Sub-categories by main category ID
 Route::get('/sub-categories/{categoryId}', function ($categoryId) {
     return SubCategory::where('category_id', $categoryId)
         ->where('status', 1)
@@ -43,34 +37,29 @@ Route::get('/sub-categories/{categoryId}', function ($categoryId) {
         ->get(['id', 'category_id', 'sub_category_name', 'group_code']);
 });
 
-// Brands
 Route::get('/brands', function () {
     return Brand::where('status', 1)
         ->orderBy('brand_name')
         ->get(['id', 'brand_name']);
 });
 
-// Shipping
 Route::get('/shipping/containers', [ShippingController::class, 'containers']);
 Route::get('/shipping/countries', [ShippingController::class, 'countries']);
 Route::get('/shipping/ports/{country}', [ShippingController::class, 'ports']);
 
-// Customer Registration (public)
 Route::post('/register-customer', [CustomerRegistrationController::class, 'register']);
 Route::post('/register-supplier', [SupplierRegistrationController::class, 'register']);
 
-// Public routes
 Route::get('/deals', [AdminController::class, 'publicDeals']);
+Route::get('/home-banners', [AdminController::class, 'publicHomeBanners']);
 Route::post('/login', [AdminController::class, 'login']);
 Route::match(['get', 'options'], '/login', function() {
     return response()->json(['message' => 'Login requires a POST request.'], 405);
 });
 Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
 
-// ── Admin Routes (protected by X-Admin-Key: navsa2024 header) ─────────────
 Route::prefix('admin')->group(function () {
 
-    // Admin Dashboard & Registrations
     Route::get('/stats', [AdminController::class, 'stats']);
     Route::get('/registrations', [AdminController::class, 'getRegistrations']);
     Route::post('/registrations/{id}/approve', [AdminController::class, 'approveRegistration']);
@@ -91,26 +80,31 @@ Route::prefix('admin')->group(function () {
     Route::delete('/products/{id}',                [AdminController::class, 'hardDeleteProduct']);
     Route::patch('/products/clear-offers',         [AdminController::class, 'clearOffers']);
 
-    // Users
     Route::get('/users',                           [AdminController::class, 'users']);
     Route::put('/users/{id}',                      [AdminController::class, 'updateUser']);
     Route::delete('/users/{id}',                   [AdminController::class, 'deleteUser']);
 
-    // Brands CRUD + delete
+    Route::get('/suppliers',                       [AdminController::class, 'suppliers']);
+    Route::put('/suppliers/{id}',                  [AdminController::class, 'updateSupplier']);
+
     Route::get('/brands',                          [AdminController::class, 'brands']);
     Route::post('/brands',                         [AdminController::class, 'createBrand']);
     Route::put('/brands/{id}',                     [AdminController::class, 'updateBrand']);
     Route::patch('/brands/{id}/soft-delete',       [AdminController::class, 'softDeleteBrand']);
     Route::delete('/brands/{id}',                  [AdminController::class, 'hardDeleteBrand']);
 
-    // Categories CRUD + delete
     Route::get('/categories',                      [AdminController::class, 'categories']);
     Route::post('/categories',                     [AdminController::class, 'createCategory']);
     Route::put('/categories/{id}',                 [AdminController::class, 'updateCategory']);
     Route::patch('/categories/{id}/soft-delete',   [AdminController::class, 'softDeleteCategory']);
     Route::delete('/categories/{id}',              [AdminController::class, 'hardDeleteCategory']);
 
-    // PDFs
+    Route::get('/banners',                         [AdminController::class, 'banners']);
+    Route::post('/banners',                        [AdminController::class, 'uploadBanner']);
+    Route::post('/banners/reorder',                [AdminController::class, 'reorderBanners']);
+    Route::post('/banners/{id}',                   [AdminController::class, 'updateBanner']);
+    Route::delete('/banners/{id}',                 [AdminController::class, 'deleteBanner']);
+
     Route::get('/pdfs',                            [AdminController::class, 'pdfs']);
     Route::post('/pdfs',                           [AdminController::class, 'uploadPdf']);
     Route::post('/pdfs/reorder',                   [AdminController::class, 'reorderPdfs']);

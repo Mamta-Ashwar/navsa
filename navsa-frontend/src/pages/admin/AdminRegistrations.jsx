@@ -1,233 +1,843 @@
-import React, { useState, useEffect } from 'react';
-import { UserCheck, Eye, CheckCircle, XCircle } from 'lucide-react';
+// import React, { useEffect, useState } from 'react';
+// import { CheckCircle, Eye, UserCheck, XCircle } from 'lucide-react';
+// import NoticeModal from '../../components/NoticeModal';
+// import ConfirmModal from '../../components/common/ConfirmModal';
+
+// const BASE = import.meta.env.VITE_API_URL || '/api';
+// const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY || 'navsa2024';
+
+// const displayValue = (value) => {
+//   if (value === null || value === undefined || value === '') return 'N/A';
+//   return String(value);
+// };
+
+// const displayList = (value) => {
+//   if (Array.isArray(value)) return value.length ? value.join(', ') : 'N/A';
+
+//   if (typeof value === 'string') {
+//     try {
+//       const parsed = JSON.parse(value);
+//       if (Array.isArray(parsed)) return parsed.length ? parsed.join(', ') : 'N/A';
+//     } catch {
+//       // The database may already return a normal string.
+//     }
+//   }
+
+//   return displayValue(value);
+// };
+
+// const whatsappOptInText = (detail) => {
+//   const optedIn = detail?.whatsapp_offers_opt_in === true
+//     || detail?.whatsapp_offers_opt_in === 1
+//     || detail?.whatsapp_offers_opt_in === '1';
+
+//   if (optedIn) return 'Yes';
+//   if (detail?.whatsapp_offers_phone) return 'Yes (legacy WhatsApp number saved)';
+//   return 'No';
+// };
+
+// function DetailSection({ title, children, fullWidth = false }) {
+//   return (
+//     <div style={fullWidth ? { gridColumn: '1 / -1' } : undefined}>
+//       <h3 style={{ marginBottom: '10px' }}>{title}</h3>
+//       {children}
+//     </div>
+//   );
+// }
+
+// export default function AdminRegistrations() {
+//   const [registrations, setRegistrations] = useState([]);
+//   const [loading, setLoading] = useState(true);
+//   const [selectedReg, setSelectedReg] = useState(null);
+//   const [processing, setProcessing] = useState(false);
+//   const [error, setError] = useState('');
+//   const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, action: null });
+//   const [notice, setNotice] = useState({ open: false, title: '', message: '', type: 'success' });
+
+//   useEffect(() => {
+//     fetchRegistrations();
+//   }, []);
+
+//   const fetchRegistrations = async () => {
+//     setLoading(true);
+//     setError('');
+
+//     try {
+//       const res = await fetch(`${BASE}/admin/registrations`, {
+//         headers: {
+//           'X-Admin-Key': ADMIN_KEY,
+//           Accept: 'application/json',
+//         },
+//       });
+
+//       const data = await res.json().catch(() => ({}));
+//       if (!res.ok) {
+//         throw new Error(data.message || data.error || 'Failed to load registrations.');
+//       }
+
+//       setRegistrations(Array.isArray(data) ? data : []);
+//     } catch (fetchError) {
+//       console.error('Failed to fetch registrations', fetchError);
+//       setError(fetchError.message);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   const requestRegistrationAction = (id, action) => {
+//     setConfirmDialog({ open: true, id, action });
+//   };
+
+//   const closeConfirmation = () => {
+//     if (processing) return;
+//     setConfirmDialog({ open: false, id: null, action: null });
+//   };
+
+//   const processRegistration = async () => {
+//     const { id, action } = confirmDialog;
+//     if (!id || !action) return;
+
+//     const verb = action === 'approve' ? 'approve' : 'reject';
+//     setProcessing(true);
+
+//     try {
+//       const res = await fetch(`${BASE}/admin/registrations/${id}/${action}`, {
+//         method: 'POST',
+//         headers: {
+//           'X-Admin-Key': ADMIN_KEY,
+//           Accept: 'application/json',
+//         },
+//       });
+
+//       const data = await res.json().catch(() => ({}));
+//       if (!res.ok) {
+//         throw new Error(data.message || data.error || `Failed to ${verb} registration.`);
+//       }
+
+//       setConfirmDialog({ open: false, id: null, action: null });
+//       setSelectedReg(null);
+//       await fetchRegistrations();
+//       setNotice({
+//         open: true,
+//         title: action === 'approve' ? 'Registration Approved' : 'Registration Rejected',
+//         message: action === 'approve'
+//           ? 'The customer registration has been approved successfully.'
+//           : 'The customer registration has been rejected successfully.',
+//         type: 'success',
+//       });
+//     } catch (actionError) {
+//       console.error(`${action} error`, actionError);
+//       setConfirmDialog({ open: false, id: null, action: null });
+//       setNotice({
+//         open: true,
+//         title: 'Unable to Update Registration',
+//         message: actionError.message || `Failed to ${verb} registration.`,
+//         type: 'error',
+//       });
+//     } finally {
+//       setProcessing(false);
+//     }
+//   };
+
+//   const handleApprove = (id) => requestRegistrationAction(id, 'approve');
+//   const handleReject = (id) => requestRegistrationAction(id, 'reject');
+
+//   if (loading) return <div>Loading registrations...</div>;
+
+//   const detail = selectedReg?.customer_detail;
+
+//   return (
+//     <div className="admin-registrations" style={{ padding: '20px' }}>
+//       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+//         <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+//           <UserCheck /> Pending Customer Registrations
+//         </h2>
+//       </div>
+
+//       {error && (
+//         <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+//           {error}
+//         </div>
+//       )}
+
+//       <div className="glass-panel" style={{ padding: '20px', overflowX: 'auto' }}>
+//         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+//           <thead>
+//             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+//               <th style={{ padding: '10px' }}>Name</th>
+//               <th style={{ padding: '10px' }}>Company</th>
+//               <th style={{ padding: '10px' }}>Email</th>
+//               <th style={{ padding: '10px' }}>Role</th>
+//               <th style={{ padding: '10px' }}>Date</th>
+//               <th style={{ padding: '10px', textAlign: 'right' }}>Actions</th>
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {registrations.length === 0 ? (
+//               <tr>
+//                 <td colSpan="6" style={{ padding: '20px', textAlign: 'center' }}>No pending registrations</td>
+//               </tr>
+//             ) : (
+//               registrations.map(reg => (
+//                 <tr key={reg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+//                   <td style={{ padding: '10px' }}>{reg.name}</td>
+//                   <td style={{ padding: '10px' }}>{reg.company_name || 'N/A'}</td>
+//                   <td style={{ padding: '10px' }}>{reg.email}</td>
+//                   <td style={{ padding: '10px', textTransform: 'capitalize' }}>{reg.role || 'customer'}</td>
+//                   <td style={{ padding: '10px' }}>{reg.created_at ? new Date(reg.created_at).toLocaleDateString() : 'N/A'}</td>
+//                   <td style={{ padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+//                     <button
+//                       onClick={() => setSelectedReg(reg)}
+//                       className="admin-btn admin-btn-ghost"
+//                       style={{ padding: '5px 10px', marginRight: '10px' }}
+//                     >
+//                       <Eye size={16} style={{ marginRight: '5px' }} /> View
+//                     </button>
+//                     <button
+//                       onClick={() => handleApprove(reg.id)}
+//                       disabled={processing}
+//                       className="admin-btn"
+//                       style={{ padding: '5px 10px', background: '#10b981', marginRight: '8px' }}
+//                     >
+//                       <CheckCircle size={16} style={{ marginRight: '5px' }} /> Approve
+//                     </button>
+//                     <button
+//                       onClick={() => handleReject(reg.id)}
+//                       disabled={processing}
+//                       className="admin-btn"
+//                       style={{ padding: '5px 10px', background: '#ef4444' }}
+//                     >
+//                       <XCircle size={16} style={{ marginRight: '5px' }} /> Reject
+//                     </button>
+//                   </td>
+//                 </tr>
+//               ))
+//             )}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       {selectedReg && (
+//         <div
+//           onClick={() => setSelectedReg(null)}
+//           style={{
+//             position: 'fixed',
+//             inset: 0,
+//             background: 'rgba(0,0,0,0.8)',
+//             display: 'flex',
+//             alignItems: 'center',
+//             justifyContent: 'center',
+//             zIndex: 1000,
+//             padding: '20px',
+//           }}
+//         >
+//           <div
+//             onClick={(event) => event.stopPropagation()}
+//             className="glass-panel"
+//             style={{ width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '30px' }}
+//           >
+//             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '20px', marginBottom: '20px' }}>
+//               <h2>Registration Details: {selectedReg.name} ({selectedReg.role === 'supplier' ? 'Supplier' : 'Customer'})</h2>
+//               <button onClick={() => setSelectedReg(null)} className="admin-btn admin-btn-ghost">Close</button>
+//             </div>
+
+//             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+//               <DetailSection title="Basic Info">
+//                 <p><strong>Email:</strong> {displayValue(selectedReg.email)}</p>
+//                 <p><strong>Company:</strong> {displayValue(selectedReg.company_name)}</p>
+//                 <p><strong>Primary Phone:</strong> {displayValue(selectedReg.phone)}</p>
+//               </DetailSection>
+
+//               {detail && (
+//                 <>
+//                   <DetailSection title="Business Details">
+//                     <p><strong>Position:</strong> {displayValue(detail.position)}</p>
+//                     <p><strong>Nature:</strong> {displayValue(detail.business_nature)}</p>
+//                     <p><strong>Trading Years:</strong> {displayValue(detail.trading_years)}</p>
+//                     <p><strong>Turnover:</strong> {displayValue(detail.turnover)}</p>
+//                     <p><strong>Director:</strong> {displayValue(detail.director_name)}</p>
+//                     <p><strong>Company Registration Number:</strong> {displayValue(detail.company_registration_number)}</p>
+//                     <p><strong>VAT Number:</strong> {displayValue(detail.vat_number)}</p>
+//                     <p><strong>Website:</strong> {displayValue(detail.website)}</p>
+//                   </DetailSection>
+
+//                   <DetailSection title="Contact Numbers">
+//                     <p><strong>Registered Company Phone:</strong> {displayValue(detail.registered_phone)}</p>
+//                     <p><strong>Mobile Number:</strong> {displayValue(detail.mobile)}</p>
+//                     <p><strong>WhatsApp Offers Opt-in:</strong> {whatsappOptInText(detail)}</p>
+//                   </DetailSection>
+
+//                   <DetailSection title="Billing Address">
+//                     <p>{displayValue(detail.address_line_1)}</p>
+//                     {detail.address_line_2 && <p>{detail.address_line_2}</p>}
+//                     <p><strong>City/Town:</strong> {displayValue(detail.city)}</p>
+//                     <p><strong>State/Province:</strong> {displayValue(detail.province)}</p>
+//                     <p>{displayValue(detail.country)} - {displayValue(detail.zip_code)}</p>
+//                   </DetailSection>
+
+//                   <DetailSection title="Shipping Details">
+//                     {detail.same_as_billing ? (
+//                       <p>Same as billing address</p>
+//                     ) : (
+//                       <>
+//                         <p>{displayValue(detail.shipping_address_line_1)}</p>
+//                         {detail.shipping_address_line_2 && <p>{detail.shipping_address_line_2}</p>}
+//                         <p><strong>City/Town:</strong> {displayValue(detail.shipping_city)}</p>
+//                         <p><strong>State/Province:</strong> {displayValue(detail.shipping_province)}</p>
+//                         <p>{displayValue(detail.shipping_country)} - {displayValue(detail.shipping_zip_code)}</p>
+//                         <p><strong>Shipping Telephone:</strong> {displayValue(detail.shipping_telephone)}</p>
+//                       </>
+//                     )}
+//                   </DetailSection>
+
+//                   <DetailSection title="Accounts Information">
+//                     <p><strong>Accounts Name:</strong> {displayValue(detail.account_name)}</p>
+//                     <p><strong>Accounts Email:</strong> {displayValue(detail.account_email)}</p>
+//                     <p><strong>Other Wholesalers:</strong> {displayValue(detail.other_wholesalers)}</p>
+//                     <p><strong>Average Order Value:</strong> {displayValue(detail.average_order_value)}</p>
+//                   </DetailSection>
+
+//                   <DetailSection title="Preferences" fullWidth>
+//                     <p><strong>Region:</strong> {displayValue(detail.region)}</p>
+//                     <p><strong>Currency:</strong> {displayValue(detail.currency)}</p>
+//                     <p><strong>Import Preference:</strong> {displayValue(detail.import_full_containers)}</p>
+//                     <p><strong>Brands:</strong> {displayValue(detail.brands_interested)}</p>
+//                     <p><strong>Categories:</strong> {displayList(detail.categories_interested)}</p>
+//                     <p><strong>EORI Number:</strong> {displayValue(detail.eori_number)}</p>
+//                   </DetailSection>
+//                 </>
+//               )}
+
+//               {selectedReg.supplier_detail && (
+//                 <>
+//                   <DetailSection title="Supplier Details">
+//                     <p><strong>Company Type:</strong> {displayValue(selectedReg.supplier_detail.company_type)}</p>
+//                     <p><strong>Registration No:</strong> {displayValue(selectedReg.supplier_detail.company_registration_number)}</p>
+//                     <p><strong>Website:</strong> {displayValue(selectedReg.supplier_detail.website_url)}</p>
+//                     <p><strong>Business Phone:</strong> {displayValue(selectedReg.supplier_detail.business_phone)}</p>
+//                   </DetailSection>
+//                   <DetailSection title="Supplier Address">
+//                     <p>{displayValue(selectedReg.supplier_detail.address_line_1)}</p>
+//                     {selectedReg.supplier_detail.address_line_2 && <p>{selectedReg.supplier_detail.address_line_2}</p>}
+//                     <p>{displayValue(selectedReg.supplier_detail.city)}, {displayValue(selectedReg.supplier_detail.county)}</p>
+//                     <p>{displayValue(selectedReg.supplier_detail.country)} - {displayValue(selectedReg.supplier_detail.postcode)}</p>
+//                   </DetailSection>
+//                   <DetailSection title="Supplier Preferences" fullWidth>
+//                     <p><strong>Categories Supplied:</strong> {displayList(selectedReg.supplier_detail.categories_supplied)}</p>
+//                     <p><strong>Preferred Times:</strong> {displayList(selectedReg.supplier_detail.contact_time)}</p>
+//                     <p><strong>News & Updates:</strong> {selectedReg.supplier_detail.consent_news ? 'Yes' : 'No'}</p>
+//                     <p><strong>Marketing Mailers:</strong> {selectedReg.supplier_detail.consent_marketing ? 'Yes' : 'No'}</p>
+//                     <p><strong>Additional Comments:</strong> {displayValue(selectedReg.supplier_detail.additional_comments)}</p>
+//                   </DetailSection>
+//                 </>
+//               )}
+//             </div>
+
+//             <div style={{ marginTop: '30px', textAlign: 'right' }}>
+//               <button onClick={() => setSelectedReg(null)} className="admin-btn admin-btn-ghost" style={{ marginRight: '10px' }}>Cancel</button>
+//               <button onClick={() => handleReject(selectedReg.id)} disabled={processing} className="admin-btn" style={{ background: '#ef4444', marginRight: '10px' }}>
+//                 Reject Request
+//               </button>
+//               <button onClick={() => handleApprove(selectedReg.id)} disabled={processing} className="admin-btn" style={{ background: '#10b981' }}>
+//                 Approve Request
+//               </button>
+//             </div>
+//           </div>
+//         </div>
+//       )}
+
+//       <ConfirmModal
+//         open={confirmDialog.open}
+//         title={confirmDialog.action === 'approve' ? 'Approve Registration?' : 'Reject Registration?'}
+//         message={
+//           confirmDialog.action === 'approve'
+//             ? 'Are you sure you want to approve this customer registration?'
+//             : 'Are you sure you want to reject this customer registration?'
+//         }
+//         description={
+//           confirmDialog.action === 'approve'
+//             ? 'The customer will be able to use the approved account after this action.'
+//             : 'The application will be marked as rejected.'
+//         }
+//         confirmText={confirmDialog.action === 'approve' ? 'Approve Registration' : 'Reject Registration'}
+//         cancelText="Cancel"
+//         eyebrow={confirmDialog.action === 'approve' ? 'CUSTOMER APPROVAL' : 'CUSTOMER REJECTION'}
+//         icon={confirmDialog.action === 'approve' ? '✓' : '!'}
+//         variant={confirmDialog.action === 'approve' ? 'success' : 'danger'}
+//         loading={processing}
+//         closeOnBackdrop={!processing}
+//         onConfirm={processRegistration}
+//         onClose={closeConfirmation}
+//       />
+
+//       <NoticeModal
+//         open={notice.open}
+//         title={notice.title}
+//         message={notice.message}
+//         type={notice.type}
+//         buttonText="OK"
+//         onClose={() => setNotice(current => ({ ...current, open: false }))}
+//       />
+
+//     </div>
+//   );
+// }
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { Building2, CheckCircle, Eye, UserCheck, XCircle } from 'lucide-react';
+import NoticeModal from '../../components/NoticeModal';
+import ConfirmModal from '../../components/common/ConfirmModal';
+import {
+  approveRegistration,
+  getRegistrations,
+  rejectRegistration,
+} from '../../services/adminApi';
+
+const REGISTRATION_TABS = [
+  { key: 'customer', label: 'Customer Registrations' },
+  { key: 'supplier', label: 'Supplier Registrations' },
+];
+
+const displayValue = (value) => {
+  if (value === null || value === undefined || value === '') return 'N/A';
+  return String(value);
+};
+
+const displayList = (value) => {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : 'N/A';
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.length ? parsed.join(', ') : 'N/A';
+    } catch {
+      // The database may already return a normal string.
+    }
+  }
+
+  return displayValue(value);
+};
+
+const whatsappOptInText = (detail) => {
+  const optedIn = detail?.whatsapp_offers_opt_in === true
+    || detail?.whatsapp_offers_opt_in === 1
+    || detail?.whatsapp_offers_opt_in === '1';
+
+  if (optedIn) return 'Yes';
+  if (detail?.whatsapp_offers_phone) return 'Yes (legacy WhatsApp number saved)';
+  return 'No';
+};
+
+const registrationType = (registration) => {
+  if (registration?.registration_type === 'supplier') return 'supplier';
+  if (registration?.registration_type === 'customer') return 'customer';
+  if (registration?.supplier_detail) return 'supplier';
+  if (String(registration?.role || '').toLowerCase() === 'supplier') return 'supplier';
+  return 'customer';
+};
+
+function DetailSection({ title, children, fullWidth = false }) {
+  return (
+    <div style={fullWidth ? { gridColumn: '1 / -1' } : undefined}>
+      <h3 style={{ marginBottom: '10px' }}>{title}</h3>
+      {children}
+    </div>
+  );
+}
 
 export default function AdminRegistrations() {
-  const [registrations, setRegistrations] = useState([]);
+  const [activeTab, setActiveTab] = useState('customer');
+  const [registrations, setRegistrations] = useState({ customer: [], supplier: [] });
   const [loading, setLoading] = useState(true);
-  const [selectedReg, setSelectedReg] = useState(null); // For viewing details
+  const [selectedReg, setSelectedReg] = useState(null);
   const [processing, setProcessing] = useState(false);
-
-  useEffect(() => {
-    fetchRegistrations();
-  }, []);
+  const [error, setError] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, id: null, action: null, type: 'customer' });
+  const [notice, setNotice] = useState({ open: false, title: '', message: '', type: 'success' });
 
   const fetchRegistrations = async () => {
+    setLoading(true);
+    setError('');
+
     try {
-      const BASE = import.meta.env.VITE_API_URL || '/api';
-      const res = await fetch(`${BASE}/admin/registrations`, {
-        headers: { 'X-Admin-Key': 'navsa2024' }
+      const [customers, suppliers] = await Promise.all([
+        getRegistrations('customer'),
+        getRegistrations('supplier'),
+      ]);
+
+      setRegistrations({
+        customer: Array.isArray(customers) ? customers : [],
+        supplier: Array.isArray(suppliers) ? suppliers : [],
       });
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setRegistrations(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch registrations", error);
+    } catch (fetchError) {
+      console.error('Failed to fetch registrations', fetchError);
+      setError(fetchError.message || 'Failed to load registrations.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApprove = async (id) => {
-    if (!window.confirm("Are you sure you want to approve this registration?")) return;
+  useEffect(() => {
+    fetchRegistrations();
+  }, []);
+
+  const visibleRegistrations = useMemo(
+    () => registrations[activeTab] || [],
+    [activeTab, registrations],
+  );
+
+  const activeTypeLabel = activeTab === 'supplier' ? 'Supplier' : 'Customer';
+  const activeTypeLabelLower = activeTypeLabel.toLowerCase();
+  const ActiveHeadingIcon = activeTab === 'supplier' ? Building2 : UserCheck;
+
+  const switchTab = (tab) => {
+    setActiveTab(tab);
+    setSelectedReg(null);
+    setConfirmDialog({ open: false, id: null, action: null, type: tab });
+  };
+
+  const requestRegistrationAction = (registration, action) => {
+    setConfirmDialog({
+      open: true,
+      id: registration.id,
+      action,
+      type: registrationType(registration),
+    });
+  };
+
+  const closeConfirmation = () => {
+    if (processing) return;
+    setConfirmDialog({ open: false, id: null, action: null, type: activeTab });
+  };
+
+  const processRegistration = async () => {
+    const { id, action, type } = confirmDialog;
+    if (!id || !action) return;
+
+    const verb = action === 'approve' ? 'approve' : 'reject';
+    const typeLabel = type === 'supplier' ? 'supplier' : 'customer';
     setProcessing(true);
+
     try {
-      const BASE = import.meta.env.VITE_API_URL || '/api';
-      const res = await fetch(`${BASE}/admin/registrations/${id}/approve`, {
-        method: 'POST',
-        headers: { 'X-Admin-Key': 'navsa2024' }
-      });
-      if (res.ok) {
-        alert("Registration approved successfully!");
-        fetchRegistrations();
-        setSelectedReg(null);
+      if (action === 'approve') {
+        await approveRegistration(id);
       } else {
-        alert("Failed to approve");
+        await rejectRegistration(id);
       }
-    } catch (error) {
-      console.error("Approval error", error);
+
+      setConfirmDialog({ open: false, id: null, action: null, type });
+      setSelectedReg(null);
+      await fetchRegistrations();
+      setNotice({
+        open: true,
+        title: action === 'approve' ? 'Registration Approved' : 'Registration Rejected',
+        message: action === 'approve'
+          ? `The ${typeLabel} registration has been approved successfully.`
+          : `The ${typeLabel} registration has been rejected successfully.`,
+        type: 'success',
+      });
+    } catch (actionError) {
+      console.error(`${action} error`, actionError);
+      setConfirmDialog({ open: false, id: null, action: null, type });
+      setNotice({
+        open: true,
+        title: 'Unable to Update Registration',
+        message: actionError.message || `Failed to ${verb} registration.`,
+        type: 'error',
+      });
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleReject = async (id) => {
-    if (!window.confirm("Are you sure you want to reject this registration?")) return;
-    setProcessing(true);
-    try {
-      const BASE = import.meta.env.VITE_API_URL || '/api';
-      const res = await fetch(`${BASE}/admin/registrations/${id}/reject`, {
-        method: 'POST',
-        headers: { 'X-Admin-Key': 'navsa2024' }
-      });
-      if (res.ok) {
-        alert("Registration rejected successfully!");
-        fetchRegistrations();
-        setSelectedReg(null);
-      } else {
-        alert("Failed to reject");
-      }
-    } catch (error) {
-      console.error("Rejection error", error);
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  if (loading) return <div>Loading registrations...</div>;
+  const detail = selectedReg?.customer_detail;
+  const supplierDetail = selectedReg?.supplier_detail;
+  const selectedType = registrationType(selectedReg);
+  const confirmationType = confirmDialog.type === 'supplier' ? 'supplier' : 'customer';
+  const confirmationTypeLabel = confirmationType === 'supplier' ? 'Supplier' : 'Customer';
 
   return (
-    <div className="admin-registrations" style={{ padding: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <UserCheck /> Pending Customer Registrations
-        </h2>
+    <div className="admin-registrations registration-page">
+      <div className="registration-page__header">
+        <div>
+          <h1>Registrations</h1>
+          <p>Review and process pending customer and supplier applications.</p>
+        </div>
       </div>
 
-      <div className="glass-panel" style={{ padding: '20px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              <th style={{ padding: '10px' }}>Name</th>
-              <th style={{ padding: '10px' }}>Company</th>
-              <th style={{ padding: '10px' }}>Email</th>
-              <th style={{ padding: '10px' }}>Role</th>
-              <th style={{ padding: '10px' }}>Date</th>
-              <th style={{ padding: '10px', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {registrations.length === 0 ? (
+      <div className="registration-tabs" role="tablist" aria-label="Registration type">
+        {REGISTRATION_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            onClick={() => switchTab(tab.key)}
+            className={`admin-btn ${activeTab === tab.key ? 'admin-btn-primary' : 'admin-btn-ghost'}`}
+          >
+            {tab.label}
+            <span className="registration-tab-count">{registrations[tab.key]?.length || 0}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="glass-panel registration-summary">
+        <div className="registration-summary__title">
+          <ActiveHeadingIcon size={20} />
+          Pending {activeTypeLabel} Registrations: {visibleRegistrations.length}
+        </div>
+        <p>
+          {activeTab === 'supplier'
+            ? 'Supplier applications submitted through the Become a Supplier form appear in this tab.'
+            : 'Customer applications submitted through the Become a Customer form appear in this tab.'}
+        </p>
+      </div>
+
+      {error && (
+        <div className="registration-error" role="alert">
+          {error}
+          <button type="button" className="admin-btn admin-btn-ghost" onClick={fetchRegistrations}>
+            Try Again
+          </button>
+        </div>
+      )}
+
+      <div className="glass-panel registration-table-panel">
+        <div className="admin-table-container">
+          <table className="admin-table registration-table">
+            <thead>
               <tr>
-                <td colSpan="6" style={{ padding: '20px', textAlign: 'center' }}>No pending registrations</td>
+                <th>Name</th>
+                <th>Company</th>
+                <th>Email</th>
+                <th>Type</th>
+                <th>Date</th>
+                <th className="registration-actions-heading">Actions</th>
               </tr>
-            ) : (
-              registrations.map(reg => (
-                <tr key={reg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '10px' }}>{reg.name}</td>
-                  <td style={{ padding: '10px' }}>{reg.company_name}</td>
-                  <td style={{ padding: '10px' }}>{reg.email}</td>
-                  <td style={{ padding: '10px', textTransform: 'capitalize' }}>{reg.role || 'customer'}</td>
-                  <td style={{ padding: '10px' }}>{new Date(reg.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: '10px', textAlign: 'right' }}>
-                    <button 
-                      onClick={() => setSelectedReg(reg)}
-                      className="admin-btn admin-btn-ghost" 
-                      style={{ padding: '5px 10px', marginRight: '10px' }}>
-                      <Eye size={16} style={{ marginRight: '5px' }}/> View
-                    </button>
-                    <button 
-                      onClick={() => handleApprove(reg.id)}
-                      disabled={processing}
-                      className="admin-btn" 
-                      style={{ padding: '5px 10px', background: '#10b981', marginRight: '8px' }}>
-                      <CheckCircle size={16} style={{ marginRight: '5px' }}/> Approve
-                    </button>
-                    <button 
-                      onClick={() => handleReject(reg.id)}
-                      disabled={processing}
-                      className="admin-btn" 
-                      style={{ padding: '5px 10px', background: '#ef4444' }}>
-                      <XCircle size={16} style={{ marginRight: '5px' }}/> Reject
-                    </button>
-                  </td>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan="6" className="registration-empty-cell">Loading {activeTypeLabelLower} registrations…</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : visibleRegistrations.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="registration-empty-cell">No pending {activeTypeLabelLower} registrations</td>
+                </tr>
+              ) : (
+                visibleRegistrations.map((reg) => (
+                  <tr key={reg.id}>
+                    <td>{displayValue(reg.name)}</td>
+                    <td>{displayValue(reg.company_name)}</td>
+                    <td>{displayValue(reg.email)}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{registrationType(reg)}</td>
+                    <td>{reg.created_at ? new Date(reg.created_at).toLocaleDateString('en-GB') : 'N/A'}</td>
+                    <td>
+                      <div className="registration-row-actions">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReg(reg)}
+                          className="admin-btn admin-btn-ghost registration-action-button"
+                        >
+                          <Eye size={16} /> View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestRegistrationAction(reg, 'approve')}
+                          disabled={processing}
+                          className="admin-btn registration-action-button registration-action-button--approve"
+                        >
+                          <CheckCircle size={16} /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestRegistrationAction(reg, 'reject')}
+                          disabled={processing}
+                          className="admin-btn registration-action-button registration-action-button--reject"
+                        >
+                          <XCircle size={16} /> Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selectedReg && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
-          background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }}>
-          <div className="glass-panel" style={{ width: '80%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', padding: '30px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h2>Registration Details: {selectedReg.name} ({selectedReg.role === 'supplier' ? 'Supplier' : 'Customer'})</h2>
-              <button onClick={() => setSelectedReg(null)} className="admin-btn admin-btn-ghost">Close</button>
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div className="registration-modal-backdrop" onClick={() => setSelectedReg(null)}>
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className="glass-panel registration-detail-modal"
+          >
+            <div className="registration-detail-modal__header">
               <div>
-                <h3>Basic Info</h3>
-                <p><strong>Email:</strong> {selectedReg.email}</p>
-                <p><strong>Company:</strong> {selectedReg.company_name}</p>
-                <p><strong>Phone:</strong> {selectedReg.phone}</p>
+                <span className="registration-detail-modal__eyebrow">
+                  {selectedType === 'supplier' ? 'SUPPLIER APPLICATION' : 'CUSTOMER APPLICATION'}
+                </span>
+                <h2>{displayValue(selectedReg.name)}</h2>
               </div>
-              
-              {selectedReg.customer_detail && (
+              <button type="button" onClick={() => setSelectedReg(null)} className="admin-btn admin-btn-ghost">
+                Close
+              </button>
+            </div>
+
+            <div className="registration-detail-grid">
+              <DetailSection title="Basic Info">
+                <p><strong>Email:</strong> {displayValue(selectedReg.email)}</p>
+                <p><strong>Company:</strong> {displayValue(selectedReg.company_name)}</p>
+                <p><strong>Primary Phone:</strong> {displayValue(selectedReg.phone)}</p>
+                <p><strong>Application Type:</strong> {selectedType === 'supplier' ? 'Supplier' : 'Customer'}</p>
+              </DetailSection>
+
+              {detail && selectedType === 'customer' && (
                 <>
-                  <div>
-                    <h3>Business Details</h3>
-                    <p><strong>Nature:</strong> {selectedReg.customer_detail.business_nature}</p>
-                    <p><strong>Trading Years:</strong> {selectedReg.customer_detail.trading_years}</p>
-                    <p><strong>Turnover:</strong> {selectedReg.customer_detail.turnover}</p>
-                    <p><strong>Director:</strong> {selectedReg.customer_detail.director_name}</p>
-                  </div>
-                  <div>
-                    <h3>Address</h3>
-                    <p>{selectedReg.customer_detail.address_line_1}</p>
-                    <p>{selectedReg.customer_detail.city}, {selectedReg.customer_detail.province}</p>
-                    <p>{selectedReg.customer_detail.country} - {selectedReg.customer_detail.zip_code}</p>
-                  </div>
-                  <div>
-                    <h3>Preferences</h3>
-                    <p><strong>Region:</strong> {selectedReg.customer_detail.region}</p>
-                    <p><strong>Currency:</strong> {selectedReg.customer_detail.currency}</p>
-                    <p><strong>Import Containers:</strong> {selectedReg.customer_detail.import_full_containers}</p>
-                    <p><strong>Brands:</strong> {selectedReg.customer_detail.brands_interested}</p>
-                    <p><strong>Categories:</strong> {selectedReg.customer_detail.categories_interested?.join(', ')}</p>
-                  </div>
+                  <DetailSection title="Business Details">
+                    <p><strong>Position:</strong> {displayValue(detail.position)}</p>
+                    <p><strong>Nature:</strong> {displayValue(detail.business_nature)}</p>
+                    <p><strong>Trading Years:</strong> {displayValue(detail.trading_years)}</p>
+                    <p><strong>Turnover:</strong> {displayValue(detail.turnover)}</p>
+                    <p><strong>Director:</strong> {displayValue(detail.director_name)}</p>
+                    <p><strong>Company Registration Number:</strong> {displayValue(detail.company_registration_number)}</p>
+                    <p><strong>VAT Number:</strong> {displayValue(detail.vat_number)}</p>
+                    <p><strong>Website:</strong> {displayValue(detail.website)}</p>
+                  </DetailSection>
+
+                  <DetailSection title="Contact Numbers">
+                    <p><strong>Registered Company Phone:</strong> {displayValue(detail.registered_phone)}</p>
+                    <p><strong>Mobile Number:</strong> {displayValue(detail.mobile)}</p>
+                    <p><strong>WhatsApp Offers Opt-in:</strong> {whatsappOptInText(detail)}</p>
+                  </DetailSection>
+
+                  <DetailSection title="Billing Address">
+                    <p>{displayValue(detail.address_line_1)}</p>
+                    {detail.address_line_2 && <p>{detail.address_line_2}</p>}
+                    <p><strong>City/Town:</strong> {displayValue(detail.city)}</p>
+                    <p><strong>State/Province:</strong> {displayValue(detail.province)}</p>
+                    <p>{displayValue(detail.country)} - {displayValue(detail.zip_code)}</p>
+                  </DetailSection>
+
+                  <DetailSection title="Shipping Details">
+                    {detail.same_as_billing ? (
+                      <p>Same as billing address</p>
+                    ) : (
+                      <>
+                        <p>{displayValue(detail.shipping_address_line_1)}</p>
+                        {detail.shipping_address_line_2 && <p>{detail.shipping_address_line_2}</p>}
+                        <p><strong>City/Town:</strong> {displayValue(detail.shipping_city)}</p>
+                        <p><strong>State/Province:</strong> {displayValue(detail.shipping_province)}</p>
+                        <p>{displayValue(detail.shipping_country)} - {displayValue(detail.shipping_zip_code)}</p>
+                        <p><strong>Shipping Telephone:</strong> {displayValue(detail.shipping_telephone)}</p>
+                      </>
+                    )}
+                  </DetailSection>
+
+                  <DetailSection title="Accounts Information">
+                    <p><strong>Accounts Name:</strong> {displayValue(detail.account_name)}</p>
+                    <p><strong>Accounts Email:</strong> {displayValue(detail.account_email)}</p>
+                    <p><strong>Other Wholesalers:</strong> {displayValue(detail.other_wholesalers)}</p>
+                    <p><strong>Average Order Value:</strong> {displayValue(detail.average_order_value)}</p>
+                  </DetailSection>
+
+                  <DetailSection title="Preferences" fullWidth>
+                    <p><strong>Region:</strong> {displayValue(detail.region)}</p>
+                    <p><strong>Currency:</strong> {displayValue(detail.currency)}</p>
+                    <p><strong>Import Preference:</strong> {displayValue(detail.import_full_containers)}</p>
+                    <p><strong>Brands:</strong> {displayValue(detail.brands_interested)}</p>
+                    <p><strong>Categories:</strong> {displayList(detail.categories_interested)}</p>
+                    <p><strong>EORI Number:</strong> {displayValue(detail.eori_number)}</p>
+                  </DetailSection>
                 </>
               )}
 
-              {selectedReg.supplier_detail && (
+              {supplierDetail && selectedType === 'supplier' && (
                 <>
-                  <div>
-                    <h3>Supplier Details</h3>
-                    <p><strong>Company Type:</strong> {selectedReg.supplier_detail.company_type || 'N/A'}</p>
-                    <p><strong>Registration No:</strong> {selectedReg.supplier_detail.company_registration_number || 'N/A'}</p>
-                    <p><strong>Website:</strong> {selectedReg.supplier_detail.website_url || 'N/A'}</p>
-                    <p><strong>Business Phone:</strong> {selectedReg.supplier_detail.business_phone || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <h3>Address</h3>
-                    <p>{selectedReg.supplier_detail.address_line_1}</p>
-                    {selectedReg.supplier_detail.address_line_2 && <p>{selectedReg.supplier_detail.address_line_2}</p>}
-                    <p>{selectedReg.supplier_detail.city}, {selectedReg.supplier_detail.county}</p>
-                    <p>{selectedReg.supplier_detail.country} - {selectedReg.supplier_detail.postcode}</p>
-                  </div>
-                  <div>
-                    <h3>Preferences & Categories</h3>
-                    <p><strong>Categories Supplied:</strong> {selectedReg.supplier_detail.categories_supplied?.join(', ') || 'None selected'}</p>
-                    <p><strong>Preferred Times:</strong> {selectedReg.supplier_detail.contact_time?.join(', ') || 'No preference'}</p>
-                    <p><strong>News & Updates:</strong> {selectedReg.supplier_detail.consent_news ? 'Yes' : 'No'}</p>
-                    <p><strong>Marketing Mailers:</strong> {selectedReg.supplier_detail.consent_marketing ? 'Yes' : 'No'}</p>
-                  </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <h3>Additional Comments</h3>
-                    <p style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '4px', whiteSpace: 'pre-wrap' }}>
-                      {selectedReg.supplier_detail.additional_comments || 'No comments'}
-                    </p>
-                  </div>
+                  <DetailSection title="Supplier Details">
+                    <p><strong>Company Type:</strong> {displayValue(supplierDetail.company_type)}</p>
+                    <p><strong>Registration No:</strong> {displayValue(supplierDetail.company_registration_number)}</p>
+                    <p><strong>Website:</strong> {displayValue(supplierDetail.website_url)}</p>
+                    <p><strong>Mobile Phone:</strong> {displayValue(supplierDetail.mobile_phone)}</p>
+                    <p><strong>Business Phone:</strong> {displayValue(supplierDetail.business_phone)}</p>
+                  </DetailSection>
+
+                  <DetailSection title="Supplier Address">
+                    <p>{displayValue(supplierDetail.address_line_1)}</p>
+                    {supplierDetail.address_line_2 && <p>{supplierDetail.address_line_2}</p>}
+                    <p>{displayValue(supplierDetail.city)}, {displayValue(supplierDetail.county)}</p>
+                    <p>{displayValue(supplierDetail.country)} - {displayValue(supplierDetail.postcode)}</p>
+                  </DetailSection>
+
+                  <DetailSection title="Supplier Preferences" fullWidth>
+                    <p><strong>Categories Supplied:</strong> {displayList(supplierDetail.categories_supplied)}</p>
+                    <p><strong>Preferred Contact Times:</strong> {displayList(supplierDetail.contact_time)}</p>
+                    <p><strong>News & Updates:</strong> {supplierDetail.consent_news ? 'Yes' : 'No'}</p>
+                    <p><strong>Marketing Mailers:</strong> {supplierDetail.consent_marketing ? 'Yes' : 'No'}</p>
+                    <p><strong>Additional Comments:</strong> {displayValue(supplierDetail.additional_comments)}</p>
+                  </DetailSection>
                 </>
               )}
             </div>
 
-            <div style={{ marginTop: '30px', textAlign: 'right' }}>
-              <button onClick={() => setSelectedReg(null)} className="admin-btn admin-btn-ghost" style={{ marginRight: '10px' }}>Cancel</button>
-              <button onClick={() => handleReject(selectedReg.id)} disabled={processing} className="admin-btn" style={{ background: '#ef4444', marginRight: '10px' }}>
+            <div className="registration-detail-modal__actions">
+              <button type="button" onClick={() => setSelectedReg(null)} className="admin-btn admin-btn-ghost">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => requestRegistrationAction(selectedReg, 'reject')}
+                disabled={processing}
+                className="admin-btn registration-action-button--reject"
+              >
                 Reject Request
               </button>
-              <button onClick={() => handleApprove(selectedReg.id)} disabled={processing} className="admin-btn" style={{ background: '#10b981' }}>
+              <button
+                type="button"
+                onClick={() => requestRegistrationAction(selectedReg, 'approve')}
+                disabled={processing}
+                className="admin-btn registration-action-button--approve"
+              >
                 Approve Request
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmDialog.open}
+        title={confirmDialog.action === 'approve' ? `Approve ${confirmationTypeLabel} Registration?` : `Reject ${confirmationTypeLabel} Registration?`}
+        message={
+          confirmDialog.action === 'approve'
+            ? `Are you sure you want to approve this ${confirmationType} registration?`
+            : `Are you sure you want to reject this ${confirmationType} registration?`
+        }
+        description={
+          confirmDialog.action === 'approve'
+            ? `The ${confirmationType} application will be approved after this action.`
+            : 'The application will be marked as rejected.'
+        }
+        confirmText={confirmDialog.action === 'approve' ? 'Approve Registration' : 'Reject Registration'}
+        cancelText="Cancel"
+        eyebrow={confirmDialog.action === 'approve' ? `${confirmationTypeLabel.toUpperCase()} APPROVAL` : `${confirmationTypeLabel.toUpperCase()} REJECTION`}
+        icon={confirmDialog.action === 'approve' ? '✓' : '!'}
+        variant={confirmDialog.action === 'approve' ? 'success' : 'danger'}
+        loading={processing}
+        closeOnBackdrop={!processing}
+        onConfirm={processRegistration}
+        onClose={closeConfirmation}
+      />
+
+      <NoticeModal
+        open={notice.open}
+        title={notice.title}
+        message={notice.message}
+        type={notice.type}
+        buttonText="OK"
+        onClose={() => setNotice((current) => ({ ...current, open: false }))}
+      />
     </div>
   );
 }

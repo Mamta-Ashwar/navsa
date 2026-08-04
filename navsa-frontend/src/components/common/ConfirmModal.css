@@ -65,6 +65,12 @@
   font-weight: 900;
 }
 
+.confirm-modal__icon svg {
+  width: 31px;
+  height: 31px;
+  display: block;
+}
+
 .confirm-modal__eyebrow {
   display: inline-block;
   margin-bottom: 7px;
@@ -380,4 +386,24 @@
   .confirm-modal {
     animation: none;
   }
+}
+/* Approval confirmation variant used by Admin Registrations. */
+.confirm-modal--success .confirm-modal__icon {
+  color: #047857;
+  background: #d1fae5;
+  border-color: #6ee7b7;
+}
+
+.confirm-modal--success .confirm-modal__eyebrow {
+  color: #059669;
+}
+
+.confirm-modal--success .confirm-modal__confirm {
+  background: #047857;
+  border-color: #047857;
+}
+
+.confirm-modal--success .confirm-modal__confirm:hover {
+  background: #065f46;
+  border-color: #065f46;
 }
