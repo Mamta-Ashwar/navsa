@@ -1313,14 +1313,105 @@ class AdminController extends Controller
         @ini_set('memory_limit', '1024M');
 
         $file = $request->file('file');
-        $filePath = $file->getRealPath();
+        $ext = strtolower($file->getClientOriginalExtension() ?: 'xlsx');
+        if (!in_array($ext, ['xlsx', 'xls', 'csv'])) {
+            $ext = 'xlsx';
+        }
+
+        $tempDir = storage_path('app/temp_imports');
+        if (!file_exists($tempDir)) {
+            @mkdir($tempDir, 0777, true);
+        }
+
+        $tempFileName = 'erp_import_' . time() . '_' . uniqid() . '.' . $ext;
+        $tempFilePath = $tempDir . '/' . $tempFileName;
+
+        $file->move($tempDir, $tempFileName);
 
         try {
-            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($filePath);
-            if (method_exists($reader, 'setReadDataOnly')) {
-                $reader->setReadDataOnly(true);
+            $lastException = null;
+
+            // Strategy 1: Try IOFactory::load directly
+            try {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($tempFilePath);
+            } catch (\Throwable $e1) {
+                $lastException = $e1;
             }
-            $spreadsheet = $reader->load($filePath);
+
+            // Strategy 2: Try specific reader by file extension
+            if (!$spreadsheet) {
+                try {
+                    $reader = null;
+                    if ($ext === 'xlsx') {
+                        $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+                    } elseif ($ext === 'xls') {
+                        $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xls();
+                    } elseif ($ext === 'csv') {
+                        $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+                    }
+
+                    if ($reader) {
+                        if (method_exists($reader, 'setReadDataOnly')) {
+                            $reader->setReadDataOnly(true);
+                        }
+                        $spreadsheet = $reader->load($tempFilePath);
+                    }
+                } catch (\Throwable $e2) {
+                    if (!$lastException) $lastException = $e2;
+                }
+            }
+
+            // Strategy 3: Try Xlsx reader directly
+            if (!$spreadsheet) {
+                try {
+                    $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+                    if (method_exists($reader, 'setReadDataOnly')) {
+                        $reader->setReadDataOnly(true);
+                    }
+                    $spreadsheet = $reader->load($tempFilePath);
+                } catch (\Throwable $e3) {
+                    if (!$lastException) $lastException = $e3;
+                }
+            }
+
+            // Strategy 4: Try Xls reader directly
+            if (!$spreadsheet) {
+                try {
+                    $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xls();
+                    if (method_exists($reader, 'setReadDataOnly')) {
+                        $reader->setReadDataOnly(true);
+                    }
+                    $spreadsheet = $reader->load($tempFilePath);
+                } catch (\Throwable $e4) {
+                    if (!$lastException) $lastException = $e4;
+                }
+            }
+
+            // Strategy 5: Try Html reader directly (common for ERP exported .xlsx/.xls files)
+            if (!$spreadsheet) {
+                try {
+                    $reader = new \PhpOffice\PhpSpreadsheet\Reader\Html();
+                    $spreadsheet = $reader->load($tempFilePath);
+                } catch (\Throwable $e5) {
+                    if (!$lastException) $lastException = $e5;
+                }
+            }
+
+            // Strategy 6: Try Csv reader directly
+            if (!$spreadsheet) {
+                try {
+                    $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+                    $spreadsheet = $reader->load($tempFilePath);
+                } catch (\Throwable $e6) {
+                    if (!$lastException) $lastException = $e6;
+                }
+            }
+
+            if (!$spreadsheet) {
+                $detail = $lastException ? ': ' . $lastException->getMessage() : '.';
+                throw new \Exception('Unable to read the uploaded Excel file' . $detail);
+            }
+
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, false);
 
@@ -1329,6 +1420,17 @@ class AdminController extends Controller
             }
 
             $headers = array_shift($rows);
+
+            // Filter out empty trailing rows from Excel
+            $rows = array_values(array_filter($rows, function ($row) {
+                foreach ($row as $cell) {
+                    if ($cell !== null && trim((string)$cell) !== '') {
+                        return true;
+                    }
+                }
+                return false;
+            }));
+
             $total = count($rows);
 
             $importedCount = 0;
@@ -1468,8 +1570,17 @@ class AdminController extends Controller
                     $rawOrderQty = strtoupper(trim((string) ($row[$headerMap['order qty allowed'] ?? ($headerMap['orderqtyallowed'] ?? null)] ?? 'DEFAULT')));
                     $orderQtyAllowed = in_array($rawOrderQty, ['DEFAULT', 'PALLET', 'CASE']) ? $rawOrderQty : 'DEFAULT';
 
+                    $validVatCodes = $validVatCodes ?? DB::table('vat_codes')->pluck('code')->toArray();
                     $rawVat     = trim((string) ($row[$headerMap['vatcode a=20% & z=0%'] ?? ($headerMap['vatcode'] ?? null)] ?? ''));
                     $vatCode    = !empty($rawVat) ? strtoupper(substr($rawVat, 0, 1)) : null;
+                    if ($vatCode === 'S' || $vatCode === '2' || $rawVat === '20') {
+                        $vatCode = 'A';
+                    } elseif ($rawVat === '0') {
+                        $vatCode = 'Z';
+                    }
+                    if ($vatCode && !in_array($vatCode, $validVatCodes)) {
+                        $vatCode = null;
+                    }
 
                     $layerQtyIdx  = $headerMap['layerquantity'] ?? ($headerMap['layer_quantity'] ?? null);
                     $palletQtyIdx = $headerMap['palletquantity'] ?? ($headerMap['pallet_quantity'] ?? null);
@@ -1661,6 +1772,10 @@ class AdminController extends Controller
 
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to process Excel file: ' . $e->getMessage()], 500);
+        } finally {
+            if (isset($tempFilePath) && file_exists($tempFilePath)) {
+                @unlink($tempFilePath);
+            }
         }
     }
 

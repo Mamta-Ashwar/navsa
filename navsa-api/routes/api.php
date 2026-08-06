@@ -52,13 +52,13 @@ Route::post('/register-supplier', [SupplierRegistrationController::class, 'regis
 
 Route::get('/deals', [AdminController::class, 'publicDeals']);
 Route::get('/home-banners', [AdminController::class, 'publicHomeBanners']);
-Route::post('/login', [AdminController::class, 'login']);
+Route::post('/login', [AdminController::class, 'login'])->name('login');
 Route::match(['get', 'options'], '/login', function() {
     return response()->json(['message' => 'Login requires a POST request.'], 405);
 });
-Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
+Route::post('/logout', [AdminController::class, 'logout'])->middleware('admin.auth');
 
-Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
+Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
 
     Route::get('/stats', [AdminController::class, 'stats']);
 

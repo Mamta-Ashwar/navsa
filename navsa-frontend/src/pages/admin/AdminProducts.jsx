@@ -569,7 +569,10 @@ function ErpImportModal({ onClose, onImportDone, mode = 'erp' }) {
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv"
-                onChange={e => setFile(e.target.files[0])}
+                onChange={e => {
+                  setFile(e.target.files[0])
+                  setError(null)
+                }}
                 style={{ display:'none' }}
                 id="erp-file-input"
               />
@@ -900,22 +903,22 @@ export default function AdminProducts() {
             <table className="admin-table">
               <thead>
                 <tr>
-                  {['Ref', 'Description', 'Brand', 'Category', 'Stock', 'Offer', 'Best Offer', 'New', 'Actions'].map(h => (
-                    <th key={h}>{h}</th>
-                  ))}
-                  <th style={{ width: '130px' }}>Product Code</th>
-                  <th style={{ minWidth: '350px' }}>Description</th>
-                  <th style={{ width: '160px' }}>Brand</th>
-                  <th style={{ width: '160px' }}>Category</th>
-                  <th style={{ width: '90px' }}>Stock</th>
-                  <th style={{ width: '120px' }}>Actions</th>
+                  <th style={{ width: '120px' }}>Ref</th>
+                  <th style={{ minWidth: '280px' }}>Description</th>
+                  <th style={{ width: '150px' }}>Brand</th>
+                  <th style={{ width: '150px' }}>Category</th>
+                  <th style={{ width: '80px', textAlign: 'center' }}>Stock</th>
+                  <th style={{ width: '80px', textAlign: 'center' }}>Offer</th>
+                  <th style={{ width: '90px', textAlign: 'center' }}>Best Offer</th>
+                  <th style={{ width: '80px', textAlign: 'center' }}>New</th>
+                  <th style={{ width: '140px', textAlign: 'right', paddingRight: '1rem' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.data?.map(p => (
                   <tr key={p.id} style={{ opacity: p.deleted ? 0.5 : 1, cursor:'pointer' }} onClick={() => setDetailModal(p)}>
                     <td style={{ color: '#94a3b8', whiteSpace: 'nowrap', fontWeight: 600 }}>{p.navsa_product_code || p.reference || '—'}</td>
-                    <td style={{ minWidth: '350px', maxWidth: '600px' }}>
+                    <td style={{ minWidth: '280px', maxWidth: '500px' }}>
                       <div style={{ fontWeight: 500, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</div>
                       {p.is_offer && p.offer_label && (
                         <span className="admin-badge admin-badge-warning" style={{ marginTop: '4px', display: 'inline-block' }}>{p.offer_label}</span>
@@ -923,31 +926,31 @@ export default function AdminProducts() {
                     </td>
                     <td>{p.brand?.brand_name || '—'}</td>
                     <td>{p.category?.category_name || '—'}</td>
-                    <td>
+                    <td style={{ textAlign: 'center' }}>
                       <span className={`admin-badge ${p.stock_quantity > 50 ? 'admin-badge-success' : p.stock_quantity > 0 ? 'admin-badge-warning' : 'admin-badge-danger'}`}>
                         {p.stock_quantity ?? 0}
                       </span>
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
                         <input type="checkbox" checked={!!p.is_offer} onChange={() => !p.deleted && doToggleOffer(p)} />
                         <span className="admin-slider"></span>
                       </label>
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
                         <input type="checkbox" checked={!!p.is_best_offer} onChange={() => !p.deleted && doToggleBestOffer(p.id)} />
                         <span className="admin-slider"></span>
                       </label>
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
                         <input type="checkbox" checked={!!p.is_new_arrival} onChange={() => !p.deleted && doToggleNewArrival(p.id)} />
                         <span className="admin-slider"></span>
                       </label>
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <td onClick={e => e.stopPropagation()} style={{ width: '140px', textAlign: 'right', paddingRight: '1rem', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', gap: '0.35rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                         {!p.deleted ? (
                           <>
                             <button
