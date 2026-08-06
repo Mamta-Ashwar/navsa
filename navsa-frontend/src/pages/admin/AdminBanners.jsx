@@ -64,15 +64,17 @@
 //   return banner.brand_name || banner.brand?.brand_name || 'General / no brand'
 // }
 
-// function normaliseForm(source = {}, position = 'hero') {
+// function normaliseForm(source, position = 'hero') {
+//   const safeSource = source && typeof source === 'object' ? source : {}
+
 //   return {
 //     ...EMPTY_FORM,
-//     ...source,
-//     position: source.position || position,
-//     brand_id: source.brand_id ? String(source.brand_id) : '',
-//     link_url: safeText(source.link_url),
-//     button_text: safeText(source.button_text),
-//     is_active: source.is_active !== false,
+//     ...safeSource,
+//     position: safeSource.position || position,
+//     brand_id: safeSource.brand_id ? String(safeSource.brand_id) : '',
+//     link_url: safeText(safeSource.link_url),
+//     button_text: safeText(safeSource.button_text),
+//     is_active: safeSource.is_active !== false,
 //     image: null,
 //   }
 // }
@@ -795,7 +797,7 @@ export default function AdminBanners() {
     })
 
     return () => window.cancelAnimationFrame(frame)
-  }, [showForm, editing])
+  }, [showForm, editing, defaultPosition])
 
   const grouped = useMemo(() => Object.fromEntries(POSITIONS.map(position => [
     position.key,
@@ -805,9 +807,19 @@ export default function AdminBanners() {
   ])), [banners])
 
   const openCreate = (position) => {
+    scrollToEditFormRef.current = true
     setEditing(null)
     setDefaultPosition(position)
     setShowForm(true)
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        formSectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
+    })
   }
 
   const openEdit = (banner) => {
@@ -894,7 +906,7 @@ export default function AdminBanners() {
       </div>
 
       {showForm && (
-        <div ref={formSectionRef} style={{ scrollMarginTop: '24px' }}>
+        <div ref={formSectionRef} style={{ scrollMarginTop: '96px' }}>
           <BannerForm
             key={editing?.id || `new-${defaultPosition}`}
             initial={editing}

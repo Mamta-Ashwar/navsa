@@ -171,7 +171,9 @@ class AdminController extends Controller
 
         $q = Product::with(['brand', 'category']);
 
-        if (!$request->filled('show_deleted')) {
+        if ($request->boolean('show_deleted')) {
+            $q->where('deleted', true);
+        } else {
             $q->where('deleted', false);
         }
 
@@ -260,10 +262,27 @@ class AdminController extends Controller
     public function toggleWeb(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $product = Product::findOrFail($id);
+
+        if ($product->deleted) {
+            return response()->json([
+                'message' => 'Restore this product before changing its website visibility.',
+            ], 422);
+        }
+
         $new = $product->live_for_web ? 0 : 1;
         $product->update(['live_for_web' => $new]);
-        return response()->json(['id' => $id, 'live_for_web' => $new]);
+
+        return response()->json([
+            'id' => (int) $id,
+            'deleted' => false,
+            'live_for_web' => $new,
+            'hidden' => $new === 0,
+            'message' => $new
+                ? 'Product is now visible on the website.'
+                : 'Product is now hidden from the website.',
+        ]);
     }
 
     public function toggleOffer(Request $request, $id)
@@ -318,24 +337,59 @@ class AdminController extends Controller
     public function softDeleteProduct(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $product = Product::findOrFail($id);
-        $product->update(['deleted' => true, 'live_for_web' => 0]);
-        return response()->json(['id' => $id, 'deleted' => true]);
+        $product->update([
+            'deleted' => true,
+            'live_for_web' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $id,
+            'deleted' => true,
+            'live_for_web' => 0,
+            'message' => 'Product moved to Deleted Items.',
+        ]);
     }
 
     public function hardDeleteProduct(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        Product::findOrFail($id)->delete();
-        return response()->json(['id' => $id, 'destroyed' => true]);
+
+        $product = Product::findOrFail($id);
+
+        if (!$product->deleted) {
+            return response()->json([
+                'message' => 'Move this product to Deleted Items before deleting it permanently.',
+            ], 422);
+        }
+
+        $product->delete();
+
+        return response()->json([
+            'id' => (int) $id,
+            'destroyed' => true,
+            'message' => 'Product permanently deleted.',
+        ]);
     }
 
     public function restoreProduct(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $product = Product::findOrFail($id);
-        $product->update(['deleted' => false]);
-        return response()->json(['id' => $id, 'deleted' => false]);
+        $product->update([
+            'deleted' => false,
+            'live_for_web' => 1,
+        ]);
+
+        return response()->json([
+            'id' => (int) $id,
+            'deleted' => false,
+            'live_for_web' => 1,
+            'hidden' => false,
+            'message' => 'Product restored and made live on the website.',
+        ]);
     }
 
     public function users(Request $request)
@@ -1010,7 +1064,6 @@ class AdminController extends Controller
                 ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->orderBy('id')
-                ->limit(4)
                 ->get()
         );
     }
@@ -1051,16 +1104,6 @@ class AdminController extends Controller
         ]);
 
         $isActive = $request->boolean('is_active', true);
-
-        if (
-            $validated['type'] === 'deal'
-            && $isActive
-            && Pdf::where('type', 'deal')->where('is_active', true)->count() >= 4
-        ) {
-            return response()->json([
-                'error' => 'Only four deal PDFs can be active at the same time. Hide an existing deal first.',
-            ], 422);
-        }
 
         $path = $request->file('file')->store('pdfs', 'public');
         $nextOrder = $validated['type'] === 'deal'
@@ -1107,24 +1150,6 @@ class AdminController extends Controller
         ]);
 
         $nextType = $validated['type'] ?? $pdf->type;
-        $nextActive = $request->has('is_active')
-            ? $request->boolean('is_active')
-            : (bool) $pdf->is_active;
-
-        if (
-            $nextType === 'deal'
-            && $nextActive
-            && (!$pdf->is_active || $pdf->type !== 'deal')
-            && Pdf::where('type', 'deal')
-                ->where('is_active', true)
-                ->whereKeyNot($pdf->id)
-                ->count() >= 4
-        ) {
-            return response()->json([
-                'error' => 'Only four deal PDFs can be active at the same time. Hide an existing deal first.',
-            ], 422);
-        }
-
         $data = collect($validated)->except('file')->toArray();
 
         if ($request->has('is_active')) {

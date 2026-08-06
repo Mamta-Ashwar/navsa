@@ -15,18 +15,69 @@
 // import BecomeCustomer from './pages/BecomeCustomer'
 // import BecomeSupplier from './pages/BecomeSupplier'
 // import Tradeshow from './pages/Tradeshow'
+// import TermsConditions from './pages/TermsConditions'
+// import PrivacyCookies from './pages/PrivacyCookies'
+// import AboutUs from './pages/AboutUs'
+// import ContactUs from './pages/ContactUs'
 
-// function PlaceholderPage({ title }) {
+// function PlaceholderPage({ title, message = 'This page is being prepared.' }) {
 //   return (
-//     <div style={{
-//       minHeight: '60vh', display: 'flex', justifyContent: 'center', alignItems: 'center',
-//       background: '#D0E7E6', color: '#293681', fontFamily: "'Inter', sans-serif",
+//     <main className="placeholder-page" style={{
+//       minHeight: '60vh',
+//       display: 'flex',
+//       justifyContent: 'center',
+//       alignItems: 'center',
+//       padding: '72px 24px',
+//       background:
+//         'radial-gradient(circle at top left, rgba(28, 78, 137, 0.14), transparent 34%), #f4f7fb',
+//       color: '#0b284d',
+//       fontFamily: "'Inter', Arial, sans-serif",
 //     }}>
-//       <div style={{ textAlign: 'center' }}>
-//         <h1 style={{ color: '#0a1128', fontSize: '32px', fontWeight: 800, marginBottom: '12px' }}>{title}</h1>
-//         <p style={{ color: '#5a6a7e', fontSize: '16px' }}>Coming Soon</p>
+//       <div style={{
+//         width: 'min(100%, 720px)',
+//         padding: '54px 32px',
+//         textAlign: 'center',
+//         background: '#ffffff',
+//         border: '1px solid rgba(15, 55, 98, 0.12)',
+//         borderRadius: '24px',
+//         boxShadow: '0 24px 60px rgba(11, 40, 77, 0.12)',
+//       }}>
+//         <span style={{
+//           display: 'inline-flex',
+//           marginBottom: '16px',
+//           padding: '8px 14px',
+//           color: '#d95713',
+//           background: '#fff3e9',
+//           borderRadius: '999px',
+//           fontSize: '12px',
+//           fontWeight: 800,
+//           letterSpacing: '0.08em',
+//           textTransform: 'uppercase',
+//         }}>
+//           NAVSA Information
+//         </span>
+
+//         <h1 style={{
+//           margin: '0 0 14px',
+//           color: '#0b284d',
+//           fontSize: 'clamp(32px, 5vw, 48px)',
+//           lineHeight: 1.1,
+//           fontWeight: 800,
+//         }}>
+//           {title}
+//         </h1>
+
+//         <p style={{
+//           maxWidth: '520px',
+//           margin: '0 auto',
+//           color: '#61728a',
+//           fontSize: '16px',
+//           lineHeight: 1.75,
+//         }}>
+//           {message}
+//         </p>
 //       </div>
-//     </div>
+//     </main>
 //   )
 // }
 
@@ -44,32 +95,72 @@
 //   return (
 //     <BrowserRouter>
 //       <ScrollToHash />
+
 //       <Routes>
 //         <Route path="/admin" element={<Admin />} />
 //         <Route path="/admin/*" element={<Admin />} />
 
-//         <Route path="/*" element={
-//           <PublicLayout>
-//             <Routes>
-//               <Route path="/"                   element={<Home />} />
-//               <Route path="/shop"               element={<Shop />} />
-//               <Route path="/account"            element={<Account />} />
-//               <Route path="/wishlist"           element={<Wishlist />} />
-//               <Route path="/basket"             element={<Basket />} />
-//               <Route path="/brand"              element={<Brands />} />
-//               <Route path="/services"           element={<Services />} />
-//               <Route path="/about"              element={<PlaceholderPage title="About Us" />} />
-//               <Route path="/contact"            element={<PlaceholderPage title="Contact Us" />} />
-//               <Route path="/terms"              element={<PlaceholderPage title="Terms & Conditions" />} />
-//               <Route path="/privacy"            element={<PlaceholderPage title="Privacy & Cookies" />} />
-//               <Route path="/become-a-customer"  element={<BecomeCustomer />} />
-//               <Route path="/become-a-supplier"  element={<BecomeSupplier />} />
-//               <Route path="/tradeshow"          element={<Tradeshow />} />
-//               <Route path="/product/:id"        element={<ProductDetail />} />
-//               <Route path="*"                   element={<Navigate to="/" replace />} />
-//             </Routes>
-//           </PublicLayout>
-//         } />
+//         <Route
+//           path="/*"
+//           element={
+//             <PublicLayout>
+//               <Routes>
+//                 <Route path="/" element={<Home />} />
+//                 <Route path="/shop" element={<Shop />} />
+//                 <Route path="/account/login" element={<Account />} />
+//                 <Route path="/account/create" element={<BecomeCustomer />} />
+//                 <Route path="/account/supplier" element={<BecomeSupplier />} />
+
+//                 <Route path="/account" element={<Navigate to="/account/login" replace />} />
+//                 <Route path="/become-a-customer" element={<Navigate to="/account/create" replace />} />
+//                 <Route path="/become-a-supplier" element={<Navigate to="/account/supplier" replace />} />
+//                 <Route path="/account/become-a-supplier" element={<Navigate to="/account/supplier" replace />} />
+
+//                 <Route path="/wishlist" element={<Wishlist />} />
+//                 <Route path="/basket" element={<Basket />} />
+//                 <Route path="/brand" element={<Brands />} />
+//                 <Route path="/services" element={<Services />} />
+
+//                 <Route path="/terms-and-conditions" element={<TermsConditions />} />
+//                 <Route path="/terms" element={<Navigate to="/terms-and-conditions" replace />} />
+
+//                 <Route
+//                   path="/privacy-and-cookies"
+//                   element={<PrivacyCookies />}
+//                 />
+//                 <Route path="/privacy" element={<Navigate to="/privacy-and-cookies" replace />} />
+
+//                 <Route
+//                   path="/offers"
+//                   element={
+//                     <PlaceholderPage
+//                       title="Offers"
+//                       message="NAVSA's latest offers page will be added here."
+//                     />
+//                   }
+//                 />
+//                 <Route
+//                   path="/new-arrivals"
+//                   element={
+//                     <PlaceholderPage
+//                       title="New Arrivals"
+//                       message="NAVSA's new product arrivals page will be added here."
+//                     />
+//                   }
+//                 />
+//                 <Route path="/about-us" element={<AboutUs />} />
+//                 <Route path="/about" element={<Navigate to="/about-us" replace />} />
+//                 <Route path="/contact-us" element={<ContactUs />} />
+//                 <Route path="/contact" element={<Navigate to="/contact-us" replace />} />
+//                 <Route path="/page/contact-us" element={<Navigate to="/contact-us" replace />} />
+
+//                 <Route path="/tradeshow" element={<Tradeshow />} />
+//                 <Route path="/product/:id" element={<ProductDetail />} />
+//                 <Route path="*" element={<Navigate to="/" replace />} />
+//               </Routes>
+//             </PublicLayout>
+//           }
+//         />
 //       </Routes>
 //     </BrowserRouter>
 //   )
@@ -94,18 +185,69 @@ import Admin from './pages/Admin'
 import BecomeCustomer from './pages/BecomeCustomer'
 import BecomeSupplier from './pages/BecomeSupplier'
 import Tradeshow from './pages/Tradeshow'
+import TermsConditions from './pages/footer-links/TermsConditions'
+import PrivacyCookies from './pages/footer-links/PrivacyCookies'
+import AboutUs from './pages/footer-links/AboutUs'
+import ContactUs from './pages/footer-links/ContactUs'
 
-function PlaceholderPage({ title }) {
+function PlaceholderPage({ title, message = 'This page is being prepared.' }) {
   return (
-    <div style={{
-      minHeight: '60vh', display: 'flex', justifyContent: 'center', alignItems: 'center',
-      background: '#D0E7E6', color: '#293681', fontFamily: "'Inter', sans-serif",
+    <main className="placeholder-page" style={{
+      minHeight: '60vh',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '72px 24px',
+      background:
+        'radial-gradient(circle at top left, rgba(28, 78, 137, 0.14), transparent 34%), #f4f7fb',
+      color: '#0b284d',
+      fontFamily: "'Inter', Arial, sans-serif",
     }}>
-      <div style={{ textAlign: 'center' }}>
-        <h1 style={{ color: '#0a1128', fontSize: '32px', fontWeight: 800, marginBottom: '12px' }}>{title}</h1>
-        <p style={{ color: '#5a6a7e', fontSize: '16px' }}>Coming Soon</p>
+      <div style={{
+        width: 'min(100%, 720px)',
+        padding: '54px 32px',
+        textAlign: 'center',
+        background: '#ffffff',
+        border: '1px solid rgba(15, 55, 98, 0.12)',
+        borderRadius: '24px',
+        boxShadow: '0 24px 60px rgba(11, 40, 77, 0.12)',
+      }}>
+        <span style={{
+          display: 'inline-flex',
+          marginBottom: '16px',
+          padding: '8px 14px',
+          color: '#d95713',
+          background: '#fff3e9',
+          borderRadius: '999px',
+          fontSize: '12px',
+          fontWeight: 800,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+        }}>
+          NAVSA Information
+        </span>
+
+        <h1 style={{
+          margin: '0 0 14px',
+          color: '#0b284d',
+          fontSize: 'clamp(32px, 5vw, 48px)',
+          lineHeight: 1.1,
+          fontWeight: 800,
+        }}>
+          {title}
+        </h1>
+
+        <p style={{
+          maxWidth: '520px',
+          margin: '0 auto',
+          color: '#61728a',
+          fontSize: '16px',
+          lineHeight: 1.75,
+        }}>
+          {message}
+        </p>
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -123,39 +265,72 @@ function App() {
   return (
     <BrowserRouter>
       <ScrollToHash />
+
       <Routes>
         <Route path="/admin" element={<Admin />} />
         <Route path="/admin/*" element={<Admin />} />
 
-        <Route path="/*" element={
-          <PublicLayout>
-            <Routes>
-              <Route path="/"                   element={<Home />} />
-              <Route path="/shop"               element={<Shop />} />
-              <Route path="/account/login"      element={<Account />} />
-              <Route path="/account/create"     element={<BecomeCustomer />} />
-              <Route path="/account/supplier"   element={<BecomeSupplier />} />
+        <Route
+          path="/*"
+          element={
+            <PublicLayout>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/shop" element={<Shop />} />
+                <Route path="/account/login" element={<Account />} />
+                <Route path="/account/create" element={<BecomeCustomer />} />
+                <Route path="/account/supplier" element={<BecomeSupplier />} />
 
-              {/* Preserve old and alternate URLs without breaking bookmarks. */}
-              <Route path="/account"                    element={<Navigate to="/account/login" replace />} />
-              <Route path="/become-a-customer"          element={<Navigate to="/account/create" replace />} />
-              <Route path="/become-a-supplier"          element={<Navigate to="/account/supplier" replace />} />
-              <Route path="/account/become-a-supplier"  element={<Navigate to="/account/supplier" replace />} />
+                <Route path="/account" element={<Navigate to="/account/login" replace />} />
+                <Route path="/become-a-customer" element={<Navigate to="/account/create" replace />} />
+                <Route path="/become-a-supplier" element={<Navigate to="/account/supplier" replace />} />
+                <Route path="/account/become-a-supplier" element={<Navigate to="/account/supplier" replace />} />
 
-              <Route path="/wishlist"           element={<Wishlist />} />
-              <Route path="/basket"             element={<Basket />} />
-              <Route path="/brand"              element={<Brands />} />
-              <Route path="/services"           element={<Services />} />
-              <Route path="/about"              element={<PlaceholderPage title="About Us" />} />
-              <Route path="/contact"            element={<PlaceholderPage title="Contact Us" />} />
-              <Route path="/terms"              element={<PlaceholderPage title="Terms & Conditions" />} />
-              <Route path="/privacy"            element={<PlaceholderPage title="Privacy & Cookies" />} />
-              <Route path="/tradeshow"          element={<Tradeshow />} />
-              <Route path="/product/:id"        element={<ProductDetail />} />
-              <Route path="*"                   element={<Navigate to="/" replace />} />
-            </Routes>
-          </PublicLayout>
-        } />
+                <Route path="/wishlist" element={<Wishlist />} />
+                <Route path="/basket" element={<Basket />} />
+                <Route path="/brand" element={<Brands />} />
+                <Route path="/services" element={<Services />} />
+
+                <Route path="/terms-and-conditions" element={<TermsConditions />} />
+                <Route path="/terms" element={<Navigate to="/terms-and-conditions" replace />} />
+
+                <Route
+                  path="/privacy-and-cookies"
+                  element={<PrivacyCookies />}
+                />
+                <Route path="/privacy" element={<Navigate to="/privacy-and-cookies" replace />} />
+
+                <Route
+                  path="/offers"
+                  element={
+                    <PlaceholderPage
+                      title="Offers"
+                      message="NAVSA's latest offers page will be added here."
+                    />
+                  }
+                />
+                <Route
+                  path="/new-arrivals"
+                  element={
+                    <PlaceholderPage
+                      title="New Arrivals"
+                      message="NAVSA's new product arrivals page will be added here."
+                    />
+                  }
+                />
+                <Route path="/about-us" element={<AboutUs />} />
+                <Route path="/about" element={<Navigate to="/about-us" replace />} />
+                <Route path="/contact-us" element={<ContactUs />} />
+                <Route path="/contact" element={<Navigate to="/contact-us" replace />} />
+                <Route path="/page/contact-us" element={<Navigate to="/contact-us" replace />} />
+
+                <Route path="/tradeshow" element={<Tradeshow />} />
+                <Route path="/product/:id" element={<ProductDetail />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </PublicLayout>
+          }
+        />
       </Routes>
     </BrowserRouter>
   )

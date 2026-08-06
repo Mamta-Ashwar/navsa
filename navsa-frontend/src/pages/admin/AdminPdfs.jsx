@@ -16,6 +16,7 @@
 //   Upload,
 //   X,
 // } from 'lucide-react'
+// import AdminBanners from './AdminBanners'
 
 // const EMPTY_FORM = {
 //   title: '',
@@ -31,7 +32,7 @@
 
 // const TABS = [
 //   { key: 'deal', label: 'Deals & Promotion PDFs' },
-//   { key: 'manual', label: 'Product Manuals' },
+//   { key: 'banner', label: 'Banners' },
 //   { key: 'other', label: 'Other Documents' },
 // ]
 
@@ -203,7 +204,6 @@
 //             style={{ width: '100%', color: COLORS.heading }}
 //           >
 //             <option value="deal">Deal / Promotion PDF</option>
-//             <option value="manual">Product Manual</option>
 //             <option value="other">Other Document</option>
 //           </select>
 //         </label>
@@ -460,14 +460,16 @@
 //     <div style={{ color: COLORS.body }}>
 //       <div className="admin-flex-between mb-6">
 //         <div>
-//           <h1 style={{ marginBottom: '0.25rem', color: COLORS.heading }}>PDFs & Manuals</h1>
+//           <h1 style={{ marginBottom: '0.25rem', color: COLORS.heading }}>PDFs & Banners</h1>
 //           <p style={{ color: COLORS.muted }}>
-//             Manage deal brochures and downloadable documents without changing website code.
+//             Manage deal brochures, homepage banners and other documents without changing website code.
 //           </p>
 //         </div>
-//         <button onClick={openCreate} className="admin-btn admin-btn-primary">
-//           <Plus size={18} /> Add PDF
-//         </button>
+//         {tab !== 'banner' && (
+//           <button onClick={openCreate} className="admin-btn admin-btn-primary">
+//             <Plus size={18} /> Add PDF
+//           </button>
+//         )}
 //       </div>
 
 //       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -486,7 +488,7 @@
 //         ))}
 //       </div>
 
-//       {showForm && (
+//       {tab !== 'banner' && showForm && (
 //         <PdfForm
 //           key={editing?.id || `new-${tab}`}
 //           initial={editing || { ...EMPTY_FORM, type: tab }}
@@ -496,6 +498,10 @@
 //         />
 //       )}
 
+//       {tab === 'banner' ? (
+//         <AdminBanners />
+//       ) : (
+//         <>
 //       {tab === 'deal' && (
 //         <div
 //           className="glass-panel"
@@ -678,6 +684,8 @@
 //           </div>
 //         )}
 //       </div>
+//         </>
+//       )}
 //     </div>
 //   )
 // }
@@ -770,7 +778,7 @@ function moveItem(items, fromIndex, toIndex) {
   return next
 }
 
-function PdfForm({ initial, activeDealCount, onCancel, onSaved }) {
+function PdfForm({ initial, onCancel, onSaved }) {
   const [form, setForm] = useState(() => normaliseForm(initial))
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef(null)
@@ -800,16 +808,6 @@ function PdfForm({ initial, activeDealCount, onCancel, onSaved }) {
 
     if (form.valid_from && form.valid_to && form.valid_to < form.valid_from) {
       alert('Valid To cannot be earlier than Valid From.')
-      return
-    }
-
-    if (
-      form.type === 'deal'
-      && form.is_active
-      && !initial?.is_active
-      && activeDealCount >= 4
-    ) {
-      alert('Only four deal PDFs can be active at the same time.')
       return
     }
 
@@ -1176,7 +1174,6 @@ export default function AdminPdfs() {
         <PdfForm
           key={editing?.id || `new-${tab}`}
           initial={editing || { ...EMPTY_FORM, type: tab }}
-          activeDealCount={activeDealCount}
           onCancel={closeForm}
           onSaved={saved}
         />
@@ -1197,10 +1194,10 @@ export default function AdminPdfs() {
           }}
         >
           <strong style={{ color: COLORS.heading }}>
-            Public website deals: {activeDealCount}/4 active
+            Public website deals: {activeDealCount} active
           </strong>
           <p style={{ color: COLORS.muted, margin: '6px 0 0' }}>
-            Hold the grip icon and drag a row up or down. Positions are saved automatically as 1, 2, 3… with no duplicates.
+            Every active deal appears automatically in the website top bar and footer. Hold the grip icon and drag a row up or down to control the display order.
           </p>
           {savingOrder && (
             <div style={{ color: '#93c5fd', marginTop: '8px', fontWeight: 700 }}>

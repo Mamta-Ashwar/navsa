@@ -3,8 +3,9 @@ import {
   softDeleteProduct, hardDeleteProduct, restoreProduct, updateProduct, createProduct
 } from '../../services/adminApi'
 import { getBrands, getCategories } from '../../services/adminApi'
-import { Plus, Edit2, Trash2, Filter, EyeOff, RotateCcw, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Filter, Eye, EyeOff, RotateCcw, X } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
+import ConfirmModal from '../../components/common/ConfirmModal'
 
 function ProductDetailModal({ product, onClose }) {
   const rows = [
@@ -20,7 +21,7 @@ function ProductDetailModal({ product, onClose }) {
     ['Is Offer',        product.is_offer ? `Yes — ${product.offer_label || ''}` : 'No'],
     ['Best Offer',      product.is_best_offer ? 'Yes ✔' : 'No'],
     ['New Arrival',     product.is_new_arrival ? 'Yes ✔' : 'No'],
-    ['Status',          product.deleted_at ? '🗑 Deleted' : 'Active'],
+    ['Status',          product.deleted ? '🗑 Deleted' : product.live_for_web ? 'Live' : 'Hidden'],
     ['Created',         product.created_at ? new Date(product.created_at).toLocaleString() : '—'],
     ['Updated',         product.updated_at ? new Date(product.updated_at).toLocaleString() : '—'],
   ]
@@ -437,6 +438,14 @@ export default function AdminProducts() {
   const [editModal, setEditModal]   = useState(null)
   const [detailModal, setDetailModal] = useState(null)
 
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    action: null,
+    product: null,
+  })
+  const [actionProcessing, setActionProcessing] = useState(false)
+  const [actionError, setActionError] = useState('')
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -470,18 +479,62 @@ export default function AdminProducts() {
     try { await toggleNewArrival(id); load() } catch (e) { alert(e.message) }
   }
 
-  const doSoftDelete = async (id) => {
-    if (!confirm('Move this product to trash? It will be hidden from the shop.')) return
-    try { await softDeleteProduct(id); load() } catch (e) { alert(e.message) }
+  const requestProductAction = (product, action) => {
+    setConfirmDialog({
+      open: true,
+      action,
+      product,
+    })
   }
 
-  const doRestore = async (id) => {
-    try { await restoreProduct(id); load() } catch (e) { alert(e.message) }
+  const closeProductConfirmation = () => {
+    if (actionProcessing) return
+
+    setConfirmDialog({
+      open: false,
+      action: null,
+      product: null,
+    })
   }
 
-  const doHardDelete = async (id) => {
-    if (!confirm('⚠ PERMANENTLY delete this product? This cannot be undone!')) return
-    try { await hardDeleteProduct(id); load() } catch (e) { alert(e.message) }
+  const confirmProductAction = async () => {
+    const product = confirmDialog.product
+    const action = confirmDialog.action
+
+    if (!product || !action) return
+
+    setActionProcessing(true)
+    setActionError('')
+
+    try {
+      if (action === 'permanent-delete') {
+        await hardDeleteProduct(product.id)
+      } else if (action === 'restore') {
+        await restoreProduct(product.id)
+      } else {
+        await softDeleteProduct(product.id)
+      }
+
+      setConfirmDialog({
+        open: false,
+        action: null,
+        product: null,
+      })
+
+      await load()
+    } catch (error) {
+      setConfirmDialog({
+        open: false,
+        action: null,
+        product: null,
+      })
+
+      setActionError(
+        error.message || 'The product could not be updated. Please try again.'
+      )
+    } finally {
+      setActionProcessing(false)
+    }
   }
 
   const sel = (val, onChange, opts, placeholder) => (
@@ -497,6 +550,75 @@ export default function AdminProducts() {
       {offerModal  && <OfferModal product={offerModal} onClose={() => setOfferModal(null)} onSaved={load} />}
       {editModal   && <EditProductModal product={editModal} onClose={() => setEditModal(null)} onSaved={load} />}
       {detailModal && <ProductDetailModal product={detailModal} onClose={() => setDetailModal(null)} />}
+
+      <ConfirmModal
+        open={confirmDialog.open}
+        title={
+          confirmDialog.action === 'permanent-delete'
+            ? 'Permanently delete this product?'
+            : confirmDialog.action === 'restore'
+              ? 'Restore this product?'
+              : 'Move product to Deleted Items?'
+        }
+        message={
+          confirmDialog.product ? (
+            <strong>
+              {confirmDialog.product.description ||
+                `Product ${confirmDialog.product.reference || ''}`}
+            </strong>
+          ) : null
+        }
+        description={
+          confirmDialog.action === 'permanent-delete'
+            ? 'This action cannot be undone. The product and its saved information will be permanently removed.'
+            : confirmDialog.action === 'restore'
+              ? 'The product will return to the active catalogue and will immediately be visible on the public website.'
+              : 'The product will be removed from the website and active catalogue, but it can be restored later from Show Deleted.'
+        }
+        confirmText={
+          confirmDialog.action === 'permanent-delete'
+            ? 'Delete permanently'
+            : confirmDialog.action === 'restore'
+              ? 'Restore product'
+              : 'Move to Deleted Items'
+        }
+        cancelText="Cancel"
+        eyebrow={
+          confirmDialog.action === 'permanent-delete'
+            ? 'PERMANENT DELETE'
+            : confirmDialog.action === 'restore'
+              ? 'RESTORE PRODUCT'
+              : 'DELETE PRODUCT'
+        }
+        icon={
+          confirmDialog.action === 'permanent-delete'
+            ? '×'
+            : confirmDialog.action === 'restore'
+              ? '↻'
+              : '!'
+        }
+        variant={confirmDialog.action === 'restore' ? 'success' : 'danger'}
+        loading={actionProcessing}
+        closeOnBackdrop={!actionProcessing}
+        onConfirm={confirmProductAction}
+        onClose={closeProductConfirmation}
+      />
+
+      {actionError && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: '1rem',
+            padding: '0.85rem 1rem',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            borderRadius: '10px',
+            color: '#fecaca',
+            background: 'rgba(127, 29, 29, 0.22)',
+          }}
+        >
+          {actionError}
+        </div>
+      )}
 
       <div className="admin-flex-between mb-6">
         <div>
@@ -524,9 +646,18 @@ export default function AdminProducts() {
             : <button onClick={() => { setFilter(f=>({...f, low_stock:1})); setPage(1) }}
                 className="admin-btn admin-btn-ghost" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>⚠ Low Stock</button>
           }
-          <button onClick={() => { setFilter(f=>({...f, show_deleted: f.show_deleted ? undefined : 1})); setPage(1) }}
-            className="admin-btn admin-btn-ghost" style={{ border: '1px solid rgba(255,255,255,0.1)', color: filter.show_deleted ? '#3b82f6' : '#94a3b8' }}>
-            {filter.show_deleted ? '🗑 Showing Deleted' : '🗑 Show Deleted'}
+          <button
+            onClick={() => {
+              setFilter(filter.show_deleted ? {} : { show_deleted: 1 })
+              setPage(1)
+            }}
+            className="admin-btn admin-btn-ghost"
+            style={{
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: filter.show_deleted ? '#3b82f6' : '#94a3b8'
+            }}
+          >
+            {filter.show_deleted ? '← Back to Active Products' : '🗑 Show Deleted'}
           </button>
         </div>
 
@@ -540,7 +671,7 @@ export default function AdminProducts() {
             <table className="admin-table">
               <thead>
                 <tr>
-                  {['Ref', 'Description', 'Brand', 'Category', 'Stock', 'Web', 'Offer', 'Best Offer', 'New', 'Actions'].map(h => (
+                  {['Ref', 'Description', 'Brand', 'Category', 'Stock', 'Offer', 'Best Offer', 'New', 'Actions'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -563,12 +694,6 @@ export default function AdminProducts() {
                       </span>
                     </td>
                     <td onClick={e => e.stopPropagation()}>
-                      <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.live_for_web} onChange={() => !p.deleted && doToggleWeb(p.id)} />
-                        <span className="admin-slider"></span>
-                      </label>
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
                         <input type="checkbox" checked={!!p.is_offer} onChange={() => !p.deleted && doToggleOffer(p)} />
                         <span className="admin-slider"></span>
@@ -588,22 +713,79 @@ export default function AdminProducts() {
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {!p.deleted && (
-                          <button onClick={(e) => { e.stopPropagation(); setEditModal(p) }} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#3b82f6' }} title="Edit product">
-                            <Edit2 size={16} />
-                          </button>
-                        )}
-                        {!p.deleted
-                          ? <button onClick={(e) => { e.stopPropagation(); doSoftDelete(p.id) }} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#f59e0b' }}>
-                              <EyeOff size={16} />
+                        {!p.deleted ? (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditModal(p)
+                              }}
+                              className="admin-btn admin-btn-ghost"
+                              style={{ padding: '0.5rem', color: '#3b82f6' }}
+                              title="Edit product"
+                              aria-label="Edit product"
+                            >
+                              <Edit2 size={16} />
                             </button>
-                          : <button onClick={(e) => { e.stopPropagation(); doRestore(p.id) }} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#10b981' }}>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                doToggleWeb(p.id)
+                              }}
+                              className="admin-btn admin-btn-ghost"
+                              style={{
+                                padding: '0.5rem',
+                                color: p.live_for_web ? '#f59e0b' : '#10b981'
+                              }}
+                              title={p.live_for_web ? 'Hide from website' : 'Show on website'}
+                              aria-label={p.live_for_web ? 'Hide from website' : 'Show on website'}
+                            >
+                              {p.live_for_web ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                requestProductAction(p, 'move-to-deleted')
+                              }}
+                              className="admin-btn admin-btn-ghost"
+                              style={{ padding: '0.5rem', color: '#ef4444' }}
+                              title="Move to Deleted Items"
+                              aria-label="Move to Deleted Items"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                requestProductAction(p, 'restore')
+                              }}
+                              className="admin-btn admin-btn-ghost"
+                              style={{ padding: '0.5rem', color: '#10b981' }}
+                              title="Restore product as live"
+                              aria-label="Restore product"
+                            >
                               <RotateCcw size={16} />
                             </button>
-                        }
-                        <button onClick={(e) => { e.stopPropagation(); doHardDelete(p.id) }} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#ef4444' }}>
-                          <Trash2 size={16} />
-                        </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                requestProductAction(p, 'permanent-delete')
+                              }}
+                              className="admin-btn admin-btn-ghost"
+                              style={{ padding: '0.5rem', color: '#ef4444' }}
+                              title="Delete permanently"
+                              aria-label="Delete product permanently"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
