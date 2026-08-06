@@ -252,7 +252,10 @@ function Home() {
   const categoryPausedRef = useRef(false)
 
   useEffect(() => {
-    fetch('/api/products?page=1&sort_by=created_at&order=desc')
+    const BASE = import.meta.env.VITE_API_URL || '/api'
+    const headers = { 'Accept': 'application/json' }
+
+    fetch(`${BASE}/products?page=1&sort_by=created_at&order=desc`, { headers })
       .then(r => r.json())
       .then(d => {
         setNewArrivals((d.data || []).slice(0, 10))
@@ -260,20 +263,20 @@ function Home() {
       })
       .catch(() => {})
 
-    fetch('/api/products?page=2')
+    fetch(`${BASE}/products?page=2`, { headers })
       .then(r => r.json())
       .then(d => setClearance((d.data || []).slice(0, 10)))
       .catch(() => {})
 
-    fetch('/api/products?page=1&sort_by=price&order=desc')
+    fetch(`${BASE}/products?page=1&sort_by=price&order=desc`, { headers })
       .then(r => r.json())
       .then(d => setBestSellers((d.data || []).slice(0, 10)))
       .catch(() => {})
 
     Promise.allSettled([
-      fetch('/api/brands').then(response => response.json()),
-      fetch('/api/shipping/containers').then(response => response.json()),
-      fetch('/api/shipping/countries').then(response => response.json()),
+      fetch(`${BASE}/brands`, { headers }).then(response => response.json()),
+      fetch(`${BASE}/shipping/containers`, { headers }).then(response => response.json()),
+      fetch(`${BASE}/shipping/countries`, { headers }).then(response => response.json()),
     ]).then(([brandsResult, containersResult, countriesResult]) => {
       setStats(current => ({
         ...current,

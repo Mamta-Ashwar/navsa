@@ -21,7 +21,7 @@ class ProductController extends Controller
             $query->where(function ($q) use ($search) {
 
                 $q->where('description', 'like', "%{$search}%")
-                    ->orWhere('reference', 'like', "%{$search}%")
+                    ->orWhere('navsa_product_code', 'like', "%{$search}%")
                     ->orWhere('barcode_ean', 'like', "%{$search}%")
                     ->orWhere('group_desc', 'like', "%{$search}%")
 
@@ -102,7 +102,7 @@ class ProductController extends Controller
             'price',
             'cost',
             'description',
-            'reference',
+            'navsa_product_code',
             'created_at'
         ];
 

@@ -2128,17 +2128,21 @@ function BecomeSupplier() {
       const response = await fetch(`${BASE}/register-supplier`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify(submissionData)
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Supplier registration failed.');
+        throw new Error(data.message || 'Supplier registration failed.');
       }
       setStatus('success');
     } catch (error) {
       console.error('Error submitting supplier form:', error);
+      alert(error.message);
       setStatus('error');
     }
   };
@@ -2150,7 +2154,8 @@ function BecomeSupplier() {
 
           <span className="supplier-success-eyebrow">Application received</span>
           <h2>Application Submitted Successfully!</h2>
-          <p>Thank you for submitting your details. We have received your supplier application and will contact you as soon as possible.</p>
+          <p>Thank you for submitting your details. We have received your supplier application.</p>
+          <p>Please wait for approval of your account. You will be notified when able to login.</p>
           <p>You can return to the <Link to="/">Home Page</Link>.</p>
         </div>
       </div>

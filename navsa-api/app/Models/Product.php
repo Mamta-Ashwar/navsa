@@ -11,7 +11,7 @@ class Product extends Model
 
     protected $fillable = [
         // Core identifiers
-        'reference',
+        'navsa_product_code',
         'description',
         'supplier_id',
         'category_id',
@@ -118,6 +118,7 @@ class Product extends Model
         'product_banner',
         'promotion_display_date',
         'order_quantity_options',
+        'order_qty_allowed',
     ];
 
     /*
@@ -251,7 +252,7 @@ class Product extends Model
 
     public function getOrderQuantityOptionsAttribute(): array
     {
-        $rule = strtoupper($this->order_qty_allowed ?? 'DEFAULT');
+        $rule = strtoupper($this->order_qty_allowed ?? $this->qty_desc ?? 'DEFAULT');
 
         return [
             'case' => [
@@ -269,6 +270,15 @@ class Product extends Model
                 'quantity' => $this->pallet_quantity,
             ],
         ];
+    }
+
+    public function getOrderQtyAllowedAttribute(): string
+    {
+        $val = strtoupper($this->attributes['order_qty_allowed'] ?? $this->attributes['qty_desc'] ?? 'DEFAULT');
+        if (in_array($val, ['CASE', 'PALLET', 'DEFAULT'], true)) {
+            return $val;
+        }
+        return 'DEFAULT';
     }
 
     /*

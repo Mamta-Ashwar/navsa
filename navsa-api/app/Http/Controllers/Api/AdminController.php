@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Supplier;
+use App\Models\SubCategory;
 use App\Models\User;
 use App\Models\Pdf;
 use App\Models\HomeBanner;
@@ -25,7 +27,7 @@ class AdminController extends Controller
     private function auth(Request $request): bool
     {
         $key = $request->header('X-Admin-Key') ?? $request->query('admin_key');
-        return $key === $this->getAdminKey();
+        return $key === $this->getAdminKey() || $request->user() !== null;
     }
 
     private function deny()
@@ -50,15 +52,28 @@ class AdminController extends Controller
             return response()->json(['message' => 'Your account has been frozen. Please contact support at info@navsainternational.com.'], 403);
         }
 
+        if ($user->status === 'pending') {
+            return response()->json(['message' => 'Please wait for approval of your account. You will be notified when able to login.'], 403);
+        }
+
+        if ($user->status === 'rejected') {
+            return response()->json(['message' => 'Your account registration has been rejected. Please contact support.'], 403);
+        }
+
         if ($user->status !== 'approved') {
-            return response()->json(['message' => 'Your account is pending approval by the admin.'], 403);
+            return response()->json(['message' => 'Please wait for approval of your account. You will be notified when able to login.'], 403);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        $roles = $user->getRoleNames();
+        $permissions = $user->getAllPermissions()->pluck('name');
+
         return response()->json([
             'message' => 'Login successful',
             'user' => $user,
+            'roles' => $roles,
+            'permissions' => $permissions,
             'token' => $token
         ]);
     }
@@ -181,7 +196,7 @@ class AdminController extends Controller
             $s = trim($request->search);
             $q->where(function ($sub) use ($s) {
                 $sub->where('description', 'like', '%' . $s . '%')
-                    ->orWhere('reference', 'like', '%' . $s . '%')
+                    ->orWhere('navsa_product_code', 'like', '%' . $s . '%')
                     ->orWhere('barcode_ean', 'like', '%' . $s . '%');
             });
         }
@@ -199,20 +214,20 @@ class AdminController extends Controller
         if (!$this->auth($request)) return $this->deny();
 
         $request->validate([
-            'description'   => 'required|string|max:500',
-            'brand_id'      => 'nullable|integer|exists:brands,id',
-            'category_id'   => 'nullable|integer|exists:categories,id',
-            'reference'     => 'nullable|string|max:100',
-            'price'         => 'nullable|numeric|min:0',
-            'price_list'    => 'nullable|numeric|min:0',
-            'cost'          => 'nullable|numeric|min:0',
-            'stock_quantity' => 'nullable|integer|min:0',
-            'barcode_ean'   => 'nullable|string|max:50',
-            'barcode_case'  => 'nullable|string|max:50',
+            'description'        => 'required|string|max:500',
+            'brand_id'           => 'nullable|integer|exists:brands,id',
+            'category_id'        => 'nullable|integer|exists:categories,id',
+            'navsa_product_code' => 'nullable|string|max:100',
+            'price'              => 'nullable|numeric|min:0',
+            'price_list'         => 'nullable|string|max:100',
+            'cost'               => 'nullable|numeric|min:0',
+            'stock_quantity'     => 'nullable|integer|min:0',
+            'barcode_ean'        => 'nullable|string|max:50',
+            'barcode_case'       => 'nullable|string|max:50',
         ]);
 
         $allowed = [
-            'reference', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
+            'navsa_product_code', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
             'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc',
             'barcode_ean', 'barcode_case', 'group_desc', 'vat_code',
             'layer_quantity', 'pallet_quantity', 'supplier_reference',
@@ -222,7 +237,18 @@ class AdminController extends Controller
             'is_offer', 'offer_label', 'stock_quantity', 'is_best_offer', 'is_new_arrival',
         ];
 
-        $product = Product::create($request->only($allowed));
+        $data = $request->only($allowed);
+        if ($request->has('order_qty_allowed')) {
+            $val = strtoupper($request->input('order_qty_allowed'));
+            $data['qty_desc'] = match ($val) {
+                'CASE' => 'Case',
+                'PALLET' => 'Pallet',
+                default => 'Default',
+            };
+        }
+        unset($data['order_qty_allowed']);
+
+        $product = Product::create($data);
         return response()->json($product->load(['brand', 'category']), 201);
     }
 
@@ -232,20 +258,20 @@ class AdminController extends Controller
         $product = Product::findOrFail($id);
 
         $request->validate([
-            'description'   => 'sometimes|string|max:500',
-            'brand_id'      => 'nullable|integer|exists:brands,id',
-            'category_id'   => 'nullable|integer|exists:categories,id',
-            'reference'     => 'nullable|string|max:100',
-            'price'         => 'nullable|numeric|min:0',
-            'price_list'    => 'nullable|numeric|min:0',
-            'cost'          => 'nullable|numeric|min:0',
-            'stock_quantity' => 'nullable|integer|min:0',
-            'barcode_ean'   => 'nullable|string|max:50',
-            'barcode_case'  => 'nullable|string|max:50',
+            'description'        => 'sometimes|string|max:500',
+            'brand_id'           => 'nullable|integer|exists:brands,id',
+            'category_id'        => 'nullable|integer|exists:categories,id',
+            'navsa_product_code' => 'nullable|string|max:100',
+            'price'              => 'nullable|numeric|min:0',
+            'price_list'         => 'nullable|string|max:100',
+            'cost'               => 'nullable|numeric|min:0',
+            'stock_quantity'     => 'nullable|integer|min:0',
+            'barcode_ean'        => 'nullable|string|max:50',
+            'barcode_case'       => 'nullable|string|max:50',
         ]);
 
         $allowed = [
-            'reference', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
+            'navsa_product_code', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
             'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc',
             'barcode_ean', 'barcode_case', 'group_desc', 'vat_code',
             'layer_quantity', 'pallet_quantity', 'supplier_reference',
@@ -255,7 +281,18 @@ class AdminController extends Controller
             'is_offer', 'offer_label', 'stock_quantity', 'is_best_offer', 'is_new_arrival',
         ];
 
-        $product->update($request->only($allowed));
+        $data = $request->only($allowed);
+        if ($request->has('order_qty_allowed')) {
+            $val = strtoupper($request->input('order_qty_allowed'));
+            $data['qty_desc'] = match ($val) {
+                'CASE' => 'Case',
+                'PALLET' => 'Pallet',
+                default => 'Default',
+            };
+        }
+        unset($data['order_qty_allowed']);
+
+        $product->update($data);
         return response()->json($product->fresh(['brand', 'category']));
     }
 
@@ -1093,7 +1130,7 @@ class AdminController extends Controller
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'type' => 'required|in:deal,manual,other',
+            'type' => 'required|in:deal,manual,banner,other,upcoming',
             'badge' => 'nullable|string|max:50',
             'valid_from' => 'nullable|date',
             'valid_to' => 'nullable|date|after_or_equal:valid_from',
@@ -1139,7 +1176,7 @@ class AdminController extends Controller
 
         $validated = $request->validate([
             'title' => 'sometimes|required|string|max:255',
-            'type' => 'sometimes|required|in:deal,manual,other',
+            'type' => 'sometimes|required|in:deal,manual,banner,other,upcoming',
             'badge' => 'nullable|string|max:50',
             'valid_from' => 'nullable|date',
             'valid_to' => 'nullable|date|after_or_equal:valid_from',
@@ -1250,4 +1287,477 @@ class AdminController extends Controller
         return response()->json(['id' => (int) $id, 'destroyed' => true]);
     }
 
+    public function importErpProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $request->validate([
+            'file' => [
+                'required',
+                'file',
+                'max:51200',
+                function ($attribute, $value, $fail) {
+                    if (!$value->isValid()) {
+                        $fail('The uploaded file is invalid.');
+                        return;
+                    }
+                    $ext = strtolower($value->getClientOriginalExtension());
+                    if (!in_array($ext, ['xlsx', 'xls', 'csv'])) {
+                        $fail('The ' . $attribute . ' must be a file of type: xlsx, xls, csv.');
+                    }
+                },
+            ],
+        ]);
+
+        @set_time_limit(600);
+        @ini_set('memory_limit', '1024M');
+
+        $file = $request->file('file');
+        $filePath = $file->getRealPath();
+
+        try {
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($filePath);
+            if (method_exists($reader, 'setReadDataOnly')) {
+                $reader->setReadDataOnly(true);
+            }
+            $spreadsheet = $reader->load($filePath);
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, false);
+
+            if (empty($rows)) {
+                return response()->json(['error' => 'The uploaded file is empty.'], 422);
+            }
+
+            $headers = array_shift($rows);
+            $total = count($rows);
+
+            $importedCount = 0;
+            $createdCount  = 0;
+            $updatedCount  = 0;
+            $skippedCount  = 0;
+            $errorCount    = 0;
+            $unknownCodes  = [];
+
+            $suppliers = Supplier::pluck('id', 'id')->toArray();
+            $brands    = Brand::pluck('id', 'brand_name')->toArray();
+
+            $subCategoryMap = [];
+            $hasGroupCode = \Illuminate\Support\Facades\Schema::hasColumn('sub_categories', 'group_code');
+            $cols = $hasGroupCode ? ['id', 'group_code', 'category_id'] : ['id', 'sub_category_name', 'category_id'];
+
+            foreach (SubCategory::select($cols)->get() as $sc) {
+                $keyVal = $hasGroupCode ? $sc->group_code : $sc->sub_category_name;
+                if ($keyVal) {
+                    $subCategoryMap[strtoupper($keyVal)] = [
+                        'category_id'     => $sc->category_id,
+                        'sub_category_id' => $sc->id,
+                    ];
+                }
+            }
+
+            $storageMap = [];
+            if (\Illuminate\Support\Facades\Schema::hasTable('storage_group_mapping') && \Illuminate\Support\Facades\Schema::hasColumn('storage_group_mapping', 'group_code')) {
+                $storageMap = DB::table('storage_group_mapping')
+                    ->pluck('storage_type', 'group_code')
+                    ->mapWithKeys(fn ($value, $key) => [strtoupper($key) => $value])
+                    ->toArray();
+            }
+
+            $hasOrderQtyAllowed = \Illuminate\Support\Facades\Schema::hasColumn('products', 'order_qty_allowed');
+
+            $headerMap = [];
+            foreach ($headers as $idx => $h) {
+                $cleanH = strtolower(trim(preg_replace('/\s+/', ' ', (string)$h)));
+                $headerMap[$cleanH] = $idx;
+            }
+
+            $mode = strtolower(trim((string) $request->input('mode', 'erp')));
+            $isStep1 = ($mode === 'step1' || $request->boolean('step1'));
+
+            if ($isStep1) {
+                $newProductsFound = [];
+                $codeIdx = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? ($headerMap['primarysupplierindex'] ?? null));
+                $descIdx = $headerMap['description'] ?? ($headerMap['webshortdescription'] ?? null);
+
+                foreach ($rows as $rowIndex => $row) {
+                    $navsaProductCode = $codeIdx !== null ? trim((string) ($row[$codeIdx] ?? '')) : '';
+                    $description      = $descIdx !== null ? trim((string) ($row[$descIdx] ?? '')) : '';
+
+                    if (empty($description) && empty($navsaProductCode)) {
+                        continue;
+                    }
+
+                    $matchKey = !empty($navsaProductCode)
+                        ? ['navsa_product_code' => $navsaProductCode]
+                        : ['description' => $description];
+
+                    $exists = Product::where($matchKey)->exists();
+                    if (!$exists) {
+                        $newProductsFound[] = [
+                            'row'  => $rowIndex + 2,
+                            'code' => $navsaProductCode,
+                            'desc' => $description,
+                        ];
+                    }
+                }
+
+                if (!empty($newProductsFound)) {
+                    $totalNew = count($newProductsFound);
+                    $formattedRows = array_map(function($item) {
+                        $identifier = !empty($item['code']) ? "Code: {$item['code']}" : "Desc: {$item['desc']}";
+                        return "Row {$item['row']} ({$identifier})";
+                    }, $newProductsFound);
+
+                    $previewText = implode(', ', array_slice($formattedRows, 0, 15));
+                    if ($totalNew > 15) {
+                        $previewText .= ' and ' . ($totalNew - 15) . ' more...';
+                    }
+
+                    $msg = "Step 1 import can ONLY update existing products. Found {$totalNew} NEW product(s) in Excel file that do not exist in database.\n\nNew data found at: {$previewText}\n\nPlease add these new products first (via Bulk ERP Import or Add Product), and then re-run Step 1 import.";
+
+                    return response()->json([
+                        'error' => $msg,
+                        'message' => $msg,
+                        'new_products_found' => true,
+                        'total_new' => $totalNew,
+                        'new_rows' => $newProductsFound,
+                        'formatted_rows_text' => $previewText,
+                    ], 422);
+                }
+            }
+
+            foreach ($rows as $rowIndex => $row) {
+                try {
+                    $codeIdx  = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? ($headerMap['primarysupplierindex'] ?? null));
+                    $descIdx  = $headerMap['description'] ?? ($headerMap['webshortdescription'] ?? null);
+
+                    $navsaProductCode = $codeIdx !== null ? trim((string) ($row[$codeIdx] ?? '')) : '';
+                    $description      = $descIdx !== null ? trim((string) ($row[$descIdx] ?? '')) : '';
+
+                    if (empty($description) && empty($navsaProductCode)) {
+                        $skippedCount++;
+                        continue;
+                    }
+
+                    $barIdx          = $headerMap['barcodeean'] ?? ($headerMap['barcode_ean'] ?? null);
+                    $barcodeCaseIdx  = $headerMap['barcodecase'] ?? ($headerMap['barcode_case'] ?? null);
+                    $grpIdx          = $headerMap['groupdesc'] ?? ($headerMap['group_desc'] ?? null);
+
+                    $barcodeEan  = $barIdx !== null ? trim((string) ($row[$barIdx] ?? '')) : null;
+                    $barcodeCase = $barcodeCaseIdx !== null ? trim((string) ($row[$barcodeCaseIdx] ?? '')) : null;
+                    $groupDesc   = $grpIdx !== null ? trim((string) ($row[$grpIdx] ?? '')) : null;
+
+                    $priceIdx = $headerMap['price'] ?? null;
+                    $costIdx  = $headerMap['cost'] ?? null;
+
+                    $price = $priceIdx !== null ? $this->toNumberOrNull($row[$priceIdx] ?? null) : null;
+                    $cost  = $costIdx !== null ? $this->toNumberOrNull($row[$costIdx] ?? null) : null;
+
+                    $unitsOfIdx = $headerMap['unitsof'] ?? ($headerMap['units_of'] ?? null);
+                    $unitsOf    = $unitsOfIdx !== null ? trim((string) ($row[$unitsOfIdx] ?? '')) : null;
+
+                    $innerCaseIdx = $headerMap['units per case'] ?? ($headerMap['innercasequantity'] ?? ($headerMap['inner_case_quantity'] ?? null));
+                    $innerCase    = $innerCaseIdx !== null ? $this->toNumberOrNull($row[$innerCaseIdx] ?? null) : null;
+
+                    $outerCaseIdx = $headerMap['outercasequantity'] ?? ($headerMap['outer_case_quantity'] ?? null);
+                    $outerCase    = $outerCaseIdx !== null ? $this->toNumberOrNull($row[$outerCaseIdx] ?? null) : null;
+
+                    $qtyDescIdx = $headerMap['qtydesc'] ?? ($headerMap['qty_desc'] ?? null);
+                    $qtyDesc    = $qtyDescIdx !== null ? trim((string) ($row[$qtyDescIdx] ?? '')) : null;
+
+                    $rawOrderQty = strtoupper(trim((string) ($row[$headerMap['order qty allowed'] ?? ($headerMap['orderqtyallowed'] ?? null)] ?? 'DEFAULT')));
+                    $orderQtyAllowed = in_array($rawOrderQty, ['DEFAULT', 'PALLET', 'CASE']) ? $rawOrderQty : 'DEFAULT';
+
+                    $rawVat     = trim((string) ($row[$headerMap['vatcode a=20% & z=0%'] ?? ($headerMap['vatcode'] ?? null)] ?? ''));
+                    $vatCode    = !empty($rawVat) ? strtoupper(substr($rawVat, 0, 1)) : null;
+
+                    $layerQtyIdx  = $headerMap['layerquantity'] ?? ($headerMap['layer_quantity'] ?? null);
+                    $palletQtyIdx = $headerMap['palletquantity'] ?? ($headerMap['pallet_quantity'] ?? null);
+
+                    $layerQty  = $layerQtyIdx !== null ? $this->toNumberOrNull($row[$layerQtyIdx] ?? null) : null;
+                    $palletQty = $palletQtyIdx !== null ? $this->toNumberOrNull($row[$palletQtyIdx] ?? null) : null;
+
+                    $supplierRefIdx = $headerMap['primarysupplierreference'] ?? ($headerMap['supplier_reference'] ?? null);
+                    $supplierRef    = $supplierRefIdx !== null ? trim((string) ($row[$supplierRefIdx] ?? '')) : null;
+
+                    $costFromDateIdx = $headerMap['costfromdate'] ?? ($headerMap['cost_from_date'] ?? null);
+                    $costToDateIdx   = $headerMap['costtodate'] ?? ($headerMap['cost_to_date'] ?? null);
+
+                    $costFromDate = $costFromDateIdx !== null ? $this->toDateOrNull($row[$costFromDateIdx] ?? null) : null;
+                    $costToDate   = $costToDateIdx !== null ? $this->toDateOrNull($row[$costToDateIdx] ?? null) : null;
+
+                    $weightIdx = $headerMap['unit weight'] ?? ($headerMap['weight'] ?? null);
+                    $volumeIdx = $headerMap['unit volume'] ?? ($headerMap['volume'] ?? null);
+
+                    $weight = $weightIdx !== null ? $this->toNumberOrNull($row[$weightIdx] ?? null) : null;
+                    $volume = $volumeIdx !== null ? $this->toNumberOrNull($row[$volumeIdx] ?? null) : null;
+
+                    $shelfLifeIdx = $headerMap['shelflife in days'] ?? ($headerMap['shelflife'] ?? ($headerMap['shelf_life'] ?? null));
+                    $shelfLife    = $shelfLifeIdx !== null ? $this->toNumberOrNull($row[$shelfLifeIdx] ?? null) : null;
+
+                    $bbdIdx = $headerMap['best before date (indicative)'] ?? ($headerMap['bbd'] ?? null);
+                    $bbd    = $bbdIdx !== null ? $this->toDateOrNull($row[$bbdIdx] ?? null) : null;
+
+                    $priceListIdx = $headerMap['pricelist'] ?? ($headerMap['price_list'] ?? null);
+                    $priceList    = $priceListIdx !== null ? trim((string) ($row[$priceListIdx] ?? '')) : null;
+
+                    $promPriceIdx = $headerMap['promotion_price'] ?? ($headerMap['promotion price'] ?? null);
+                    $promStartIdx = $headerMap['promotion starting fromdate'] ?? ($headerMap['fromdate'] ?? ($headerMap['from_date'] ?? null));
+                    $promEndIdx   = $headerMap['promotion finish todate'] ?? ($headerMap['todate'] ?? ($headerMap['to_date'] ?? null));
+
+                    $promotionPrice = $promPriceIdx !== null ? $this->toNumberOrNull($row[$promPriceIdx] ?? null) : null;
+                    $fromDate       = $promStartIdx !== null ? $this->toDateOrNull($row[$promStartIdx] ?? null) : null;
+                    $toDate         = $promEndIdx !== null ? $this->toDateOrNull($row[$promEndIdx] ?? null) : null;
+
+                    $commCodeIdx     = $headerMap['commcode'] ?? ($headerMap['comm_code'] ?? null);
+                    $intraCountryIdx = $headerMap['intracountry'] ?? ($headerMap['intra_country'] ?? null);
+
+                    $commCode     = $commCodeIdx !== null ? trim((string) ($row[$commCodeIdx] ?? '')) : null;
+                    $intraCountry = $intraCountryIdx !== null ? trim((string) ($row[$intraCountryIdx] ?? '')) : null;
+
+                    $webShortIdx = $headerMap['webshortdescription'] ?? ($headerMap['web_short_description'] ?? null);
+                    $webLongIdx  = $headerMap['weblongdescription'] ?? ($headerMap['web_long_description'] ?? null);
+                    $webImgIdx   = $headerMap['webimage'] ?? ($headerMap['web_image'] ?? null);
+
+                    $webShort = $webShortIdx !== null ? trim((string) ($row[$webShortIdx] ?? '')) : null;
+                    $webLong  = $webLongIdx !== null ? trim((string) ($row[$webLongIdx] ?? '')) : null;
+                    $webImage = $webImgIdx !== null ? trim((string) ($row[$webImgIdx] ?? '')) : null;
+
+                    $liveForWeb = isset($headerMap['liveforweb']) && isset($row[$headerMap['liveforweb']]) ? (int)$row[$headerMap['liveforweb']] : 1;
+
+                    $navsaProductCode = !empty($navsaProductCode) ? $navsaProductCode : 'PROD-' . ($rowIndex + 1);
+
+                    $brandName     = trim((string) ($row[$headerMap['brand'] ?? ($headerMap['brand '] ?? null)] ?? ''));
+                    $masterGroup   = trim((string) ($row[$headerMap['master group'] ?? null] ?? ''));
+                    $subCatName    = trim((string) ($row[$headerMap['sub catagories'] ?? ($headerMap['sub categories'] ?? null)] ?? ''));
+
+                    $categoryId    = null;
+                    $subCategoryId = null;
+                    $storageType   = 'Ambient';
+
+                    if (!empty($masterGroup)) {
+                        $catObj = Category::firstOrCreate(['category_name' => $masterGroup], ['status' => 1]);
+                        $categoryId = $catObj->id;
+                    }
+
+                    if (!empty($subCatName) && $categoryId) {
+                        $createAttrs = ['status' => 1];
+                        if (\Illuminate\Support\Facades\Schema::hasColumn('sub_categories', 'group_code')) {
+                            $createAttrs['group_code'] = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $subCatName), 0, 5));
+                        }
+                        $subCatObj = SubCategory::firstOrCreate(
+                            ['sub_category_name' => $subCatName, 'category_id' => $categoryId],
+                            $createAttrs
+                        );
+                        $subCategoryId = $subCatObj->id;
+                    }
+
+                    if (empty($categoryId) && !empty($groupDesc)) {
+                        $cleanGroup = preg_replace('/\s+/', ' ', trim($groupDesc));
+
+                        if (empty($brandName) && preg_match('/^\S+\s+(.+)$/', $cleanGroup, $matches)) {
+                            $brandName = trim($matches[1]);
+                        }
+
+                        $groupCode = strtoupper(substr($cleanGroup, 0, 5));
+                        $storageType = $storageMap[$groupCode] ?? 'Ambient';
+
+                        if (isset($subCategoryMap[$groupCode])) {
+                            $categoryId    = $subCategoryMap[$groupCode]['category_id'];
+                            $subCategoryId = $subCategoryMap[$groupCode]['sub_category_id'];
+                        } else {
+                            $unknownCodes[$groupCode] = ($unknownCodes[$groupCode] ?? 0) + 1;
+                        }
+                    }
+
+                    $brandId = null;
+                    if (!empty($brandName)) {
+                        if (!isset($brands[$brandName])) {
+                            $brand = Brand::firstOrCreate(
+                                ['brand_name' => $brandName],
+                                ['status' => 1]
+                            );
+                            $brands[$brandName] = $brand->id;
+                        }
+                        $brandId = $brands[$brandName];
+                    }
+
+                    $matchKey = !empty($navsaProductCode)
+                        ? ['navsa_product_code' => $navsaProductCode]
+                        : ['description' => $description];
+
+                    $existing = Product::where($matchKey)->first();
+
+                    $payload = [
+                        'navsa_product_code'    => $navsaProductCode,
+                        'category_id'           => $categoryId,
+                        'sub_category_id'       => $subCategoryId,
+                        'brand_id'              => $brandId,
+                        'description'           => $description,
+                        'units_of'              => $unitsOf ?: null,
+                        'inner_case_quantity'   => $innerCase,
+                        'outer_case_quantity'   => $outerCase,
+                        'qty_desc'              => $qtyDesc ?: null,
+                        'barcode_ean'           => $barcodeEan ?: null,
+                        'barcode_case'          => $barcodeCase ?: null,
+                        'group_desc'            => $groupDesc ?: null,
+                        'storage_type'          => $storageType,
+                        'vat_code'              => $vatCode ?: null,
+                        'layer_quantity'        => $layerQty,
+                        'pallet_quantity'       => $palletQty,
+                        'supplier_reference'    => $supplierRef ?: null,
+                        'cost'                  => $cost,
+                        'cost_from_date'        => $costFromDate,
+                        'cost_to_date'          => $costToDate,
+                        'weight'                => $weight,
+                        'volume'                => $volume,
+                        'shelf_life'            => $shelfLife,
+                        'bbd'                   => $bbd,
+                        'price_list'            => $priceList ?: null,
+                        'promotion_price'       => $promotionPrice,
+                        'promotion_start_date'  => $fromDate,
+                        'promotion_finish_date' => $toDate,
+                        'from_date'             => $fromDate,
+                        'to_date'               => $toDate,
+                        'comm_code'             => $commCode ?: null,
+                        'intra_country'         => $intraCountry ?: null,
+                        'price'                 => $price,
+                        'web_short_description' => $webShort ?: null,
+                        'web_long_description'  => $webLong ?: null,
+                        'web_image'             => $webImage ?: null,
+                        'live_for_web'          => $liveForWeb ? 1 : 0,
+                    ];
+
+                    if ($hasOrderQtyAllowed) {
+                        $payload['order_qty_allowed'] = $orderQtyAllowed;
+                    }
+
+                    Product::updateOrCreate($matchKey, $payload);
+
+                    if ($existing) {
+                        $updatedCount++;
+                    } else {
+                        $createdCount++;
+                    }
+                    $importedCount++;
+
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error("ERP Import row error: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+                    $errorCount++;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'ERP Products imported successfully!',
+                'total' => $total,
+                'imported' => $importedCount,
+                'created' => $createdCount,
+                'updated' => $updatedCount,
+                'skipped' => $skippedCount,
+                'errors' => $errorCount,
+                'unknown_group_codes' => $unknownCodes
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to process Excel file: ' . $e->getMessage()], 500);
+        }
+    }
+
+    private function toNumberOrNull($value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        $cleaned = preg_replace('/[^\d.\-]/', '', (string) $value);
+        if ($cleaned === '' || !is_numeric($cleaned)) {
+            return null;
+        }
+        return (float) $cleaned;
+    }
+
+    private function toDateOrNull($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        $str = trim((string) $value);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $str)) {
+            return $str;
+        }
+        if (is_numeric($value)) {
+            try {
+                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value)->format('Y-m-d');
+            } catch (\Exception $e) {
+                return null;
+            }
+        }
+        $timestamp = strtotime($str);
+        return $timestamp ? date('Y-m-d', $timestamp) : null;
+    }
+
+    public function getRoles()
+    {
+        $roles = \Spatie\Permission\Models\Role::with('permissions')->get();
+        return response()->json($roles);
+    }
+
+    public function getPermissions()
+    {
+        $permissions = \Spatie\Permission\Models\Permission::all();
+        return response()->json($permissions);
+    }
+
+    public function createRole(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|unique:roles,name',
+            'permissions' => 'array'
+        ]);
+
+        $role = \Spatie\Permission\Models\Role::create([
+            'name' => $request->name,
+            'guard_name' => 'sanctum'
+        ]);
+
+        if ($request->has('permissions')) {
+            $role->syncPermissions($request->permissions);
+        }
+
+        return response()->json(['message' => 'Role created successfully', 'role' => $role->load('permissions')]);
+    }
+
+    public function updateRolePermissions(Request $request, $id)
+    {
+        $request->validate([
+            'permissions' => 'required|array'
+        ]);
+
+        $role = \Spatie\Permission\Models\Role::findOrFail($id);
+        $role->syncPermissions($request->permissions);
+
+        return response()->json(['message' => 'Role permissions updated successfully', 'role' => $role->load('permissions')]);
+    }
+
+    public function assignUserRoles(Request $request, $userId)
+    {
+        $request->validate([
+            'roles' => 'required|array'
+        ]);
+
+        $user = User::findOrFail($userId);
+        $user->syncRoles($request->roles);
+
+        return response()->json([
+            'message' => 'User roles updated successfully',
+            'roles' => $user->getRoleNames(),
+            'permissions' => $user->getAllPermissions()->pluck('name')
+        ]);
+    }
 }

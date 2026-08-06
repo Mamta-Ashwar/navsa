@@ -30,6 +30,7 @@ function Basket() {
 
   const {
     basketItems,
+    changeCaseQty,
     changeLayerQty,
     changePalletQty,
     removeFromBasket,
@@ -200,9 +201,17 @@ function Basket() {
                     <button onClick={() => changePalletQty(item.id, 1)}>+</button>
                   </div>
 
+                  {(item.caseQty > 0 || String(item.order_qty_allowed || item.qty_desc || '').toLowerCase() === 'case') && (
+                    <div className="basket-counter">
+                      <button onClick={() => changeCaseQty(item.id, -1)}>-</button>
+                      <span>Cases ({item.caseQty || 0})</span>
+                      <button onClick={() => changeCaseQty(item.id, 1)}>+</button>
+                    </div>
+                  )}
+
                   <div className="basket-counter">
                     <button onClick={() => changeLayerQty(item.id, -1)}>-</button>
-                    <span>Layers</span>
+                    <span>Layers ({item.layerQty || 0})</span>
                     <button onClick={() => changeLayerQty(item.id, 1)}>+</button>
                   </div>
                 </div>

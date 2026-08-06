@@ -2152,28 +2152,19 @@ function BecomeCustomer() {
       const response = await fetch(`${BASE}/register-customer`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify(payload)
       });
-
+      
       if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({}));
-        const validationMessages = Object.values(
-          errorPayload.errors || {}
-        ).flat();
-
-        throw new Error(
-          validationMessages.join(' ') ||
-          errorPayload.message ||
-          'Registration failed. Please check your inputs.'
-        );
+        throw new Error('Registration failed. Please check your inputs.');
       }
 
       setStatus('success');
     } catch (error) {
       console.error('Error submitting form:', error);
-      setValidationError(error.message);
       setStatus('error');
       setRecaptchaToken('');
       setRecaptchaResetCounter(current => current + 1);
@@ -2186,7 +2177,7 @@ function BecomeCustomer() {
         <div className="success-card">
           <h2>Application Submitted!</h2>
           <p>Thank you for registering with NAVSA. Your application has been sent to our team for review.</p>
-          <p>Once approved, your account will be activated, and you will be able to log in with the password you created.</p>
+          <p>Please wait for approval of your account. You will be notified when able to login.</p>
         </div>
       </div>
     );

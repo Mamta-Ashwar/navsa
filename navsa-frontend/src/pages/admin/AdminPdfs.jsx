@@ -725,7 +725,10 @@ const EMPTY_FORM = {
 const TABS = [
   { key: 'deal', label: 'Deals & Promotion PDFs' },
   { key: 'banner', label: 'Banners' },
+  { key: 'deal', label: 'Deals & Promotion' },
+  { key: 'banner', label: 'Banner' },
   { key: 'other', label: 'Other Documents' },
+  { key: 'upcoming', label: 'Upcoming' },
 ]
 
 const COLORS = {
@@ -887,6 +890,10 @@ function PdfForm({ initial, onCancel, onSaved }) {
           >
             <option value="deal">Deal / Promotion PDF</option>
             <option value="other">Other Document</option>
+            <option value="deal">Deals & Promotion</option>
+            <option value="banner">Banner</option>
+            <option value="other">Other Documents</option>
+            <option value="upcoming">Upcoming</option>
           </select>
         </label>
 

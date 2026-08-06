@@ -53,56 +53,76 @@ Route::post('/register-supplier', [SupplierRegistrationController::class, 'regis
 Route::get('/deals', [AdminController::class, 'publicDeals']);
 Route::get('/home-banners', [AdminController::class, 'publicHomeBanners']);
 Route::post('/login', [AdminController::class, 'login']);
+Route::match(['get', 'options'], '/login', function() {
+    return response()->json(['message' => 'Login requires a POST request.'], 405);
+});
 Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
 
-Route::prefix('admin')->group(function () {
+Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
 
     Route::get('/stats', [AdminController::class, 'stats']);
-    Route::get('/registrations', [AdminController::class, 'getRegistrations']);
-    Route::post('/registrations/{id}/approve', [AdminController::class, 'approveRegistration']);
-    Route::post('/registrations/{id}/reject', [AdminController::class, 'rejectRegistration']);
 
-    Route::get('/products',                        [AdminController::class, 'products']);
-    Route::post('/products',                       [AdminController::class, 'createProduct']);
-    Route::put('/products/{id}',                   [AdminController::class, 'updateProduct']);
-    Route::patch('/products/{id}/toggle-web',      [AdminController::class, 'toggleWeb']);
-    Route::patch('/products/{id}/toggle-offer',    [AdminController::class, 'toggleOffer']);
-    Route::patch('/products/{id}/toggle-best-offer',[AdminController::class, 'toggleBestOffer']);
-    Route::patch('/products/{id}/toggle-new-arrival',[AdminController::class, 'toggleNewArrival']);
-    Route::patch('/products/{id}/stock',           [AdminController::class, 'updateStock']);
-    Route::patch('/products/{id}/soft-delete',     [AdminController::class, 'softDeleteProduct']);
-    Route::patch('/products/{id}/restore',         [AdminController::class, 'restoreProduct']);
-    Route::delete('/products/{id}',                [AdminController::class, 'hardDeleteProduct']);
-    Route::patch('/products/clear-offers',         [AdminController::class, 'clearOffers']);
+    // Registrations
+    Route::get('/registrations', [AdminController::class, 'getRegistrations'])->middleware('can:registrations.view');
+    Route::post('/registrations/{id}/approve', [AdminController::class, 'approveRegistration'])->middleware('can:registrations.approve');
+    Route::post('/registrations/{id}/reject', [AdminController::class, 'rejectRegistration'])->middleware('can:registrations.reject');
 
-    Route::get('/users',                           [AdminController::class, 'users']);
-    Route::put('/users/{id}',                      [AdminController::class, 'updateUser']);
-    Route::delete('/users/{id}',                   [AdminController::class, 'deleteUser']);
+    // Products CRUD + stock + delete + ERP import
+    Route::post('/import-erp',                     [AdminController::class, 'importErpProducts'])->middleware('can:products.import-erp');
+    Route::get('/products',                        [AdminController::class, 'products'])->middleware('can:products.view');
+    Route::post('/products',                       [AdminController::class, 'createProduct'])->middleware('can:products.create');
+    Route::put('/products/{id}',                   [AdminController::class, 'updateProduct'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/toggle-web',      [AdminController::class, 'toggleWeb'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/toggle-offer',    [AdminController::class, 'toggleOffer'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/toggle-best-offer',[AdminController::class, 'toggleBestOffer'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/toggle-new-arrival',[AdminController::class, 'toggleNewArrival'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/stock',           [AdminController::class, 'updateStock'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/soft-delete',     [AdminController::class, 'softDeleteProduct'])->middleware('can:products.delete');
+    Route::patch('/products/{id}/restore',         [AdminController::class, 'restoreProduct'])->middleware('can:products.delete');
+    Route::delete('/products/{id}',                [AdminController::class, 'hardDeleteProduct'])->middleware('can:products.delete');
+    Route::patch('/products/clear-offers',         [AdminController::class, 'clearOffers'])->middleware('can:products.edit');
 
-    Route::get('/suppliers',                       [AdminController::class, 'suppliers']);
-    Route::put('/suppliers/{id}',                  [AdminController::class, 'updateSupplier']);
+    // Customers (Users)
+    Route::get('/users',                           [AdminController::class, 'users'])->middleware('can:customers.view');
+    Route::put('/users/{id}',                      [AdminController::class, 'updateUser'])->middleware('can:customers.manage');
+    Route::delete('/users/{id}',                   [AdminController::class, 'deleteUser'])->middleware('can:customers.manage');
+    Route::post('/users/{id}/roles',               [AdminController::class, 'assignUserRoles'])->middleware('can:roles.manage');
 
-    Route::get('/brands',                          [AdminController::class, 'brands']);
-    Route::post('/brands',                         [AdminController::class, 'createBrand']);
-    Route::put('/brands/{id}',                     [AdminController::class, 'updateBrand']);
-    Route::patch('/brands/{id}/soft-delete',       [AdminController::class, 'softDeleteBrand']);
-    Route::delete('/brands/{id}',                  [AdminController::class, 'hardDeleteBrand']);
+    // Suppliers
+    Route::get('/suppliers',                       [AdminController::class, 'suppliers'])->middleware('can:suppliers.view');
+    Route::put('/suppliers/{id}',                  [AdminController::class, 'updateSupplier'])->middleware('can:suppliers.manage');
 
-    Route::get('/categories',                      [AdminController::class, 'categories']);
-    Route::post('/categories',                     [AdminController::class, 'createCategory']);
-    Route::put('/categories/{id}',                 [AdminController::class, 'updateCategory']);
-    Route::patch('/categories/{id}/soft-delete',   [AdminController::class, 'softDeleteCategory']);
-    Route::delete('/categories/{id}',              [AdminController::class, 'hardDeleteCategory']);
+    // Brands
+    Route::get('/brands',                          [AdminController::class, 'brands'])->middleware('can:brands.manage');
+    Route::post('/brands',                         [AdminController::class, 'createBrand'])->middleware('can:brands.manage');
+    Route::put('/brands/{id}',                     [AdminController::class, 'updateBrand'])->middleware('can:brands.manage');
+    Route::patch('/brands/{id}/soft-delete',       [AdminController::class, 'softDeleteBrand'])->middleware('can:brands.manage');
+    Route::delete('/brands/{id}',                  [AdminController::class, 'hardDeleteBrand'])->middleware('can:brands.manage');
 
-    Route::get('/banners',                         [AdminController::class, 'banners']);
-    Route::post('/banners',                        [AdminController::class, 'uploadBanner']);
-    Route::post('/banners/reorder',                [AdminController::class, 'reorderBanners']);
-    Route::post('/banners/{id}',                   [AdminController::class, 'updateBanner']);
-    Route::delete('/banners/{id}',                 [AdminController::class, 'deleteBanner']);
+    // Categories
+    Route::get('/categories',                      [AdminController::class, 'categories'])->middleware('can:categories.manage');
+    Route::post('/categories',                     [AdminController::class, 'createCategory'])->middleware('can:categories.manage');
+    Route::put('/categories/{id}',                 [AdminController::class, 'updateCategory'])->middleware('can:categories.manage');
+    Route::patch('/categories/{id}/soft-delete',   [AdminController::class, 'softDeleteCategory'])->middleware('can:categories.manage');
+    Route::delete('/categories/{id}',              [AdminController::class, 'hardDeleteCategory'])->middleware('can:categories.manage');
 
-    Route::get('/pdfs',                            [AdminController::class, 'pdfs']);
-    Route::post('/pdfs',                           [AdminController::class, 'uploadPdf']);
-    Route::post('/pdfs/reorder',                   [AdminController::class, 'reorderPdfs']);
-    Route::post('/pdfs/{id}',                      [AdminController::class, 'updatePdf']);
-    Route::delete('/pdfs/{id}',                    [AdminController::class, 'deletePdf']);
+    // Banners
+    Route::get('/banners',                         [AdminController::class, 'banners'])->middleware('can:banners.manage');
+    Route::post('/banners',                        [AdminController::class, 'uploadBanner'])->middleware('can:banners.manage');
+    Route::post('/banners/reorder',                [AdminController::class, 'reorderBanners'])->middleware('can:banners.manage');
+    Route::post('/banners/{id}',                   [AdminController::class, 'updateBanner'])->middleware('can:banners.manage');
+    Route::delete('/banners/{id}',                 [AdminController::class, 'deleteBanner'])->middleware('can:banners.manage');
+
+    // PDFs
+    Route::get('/pdfs',                            [AdminController::class, 'pdfs'])->middleware('can:pdfs.manage');
+    Route::post('/pdfs',                           [AdminController::class, 'uploadPdf'])->middleware('can:pdfs.manage');
+    Route::post('/pdfs/reorder',                   [AdminController::class, 'reorderPdfs'])->middleware('can:pdfs.manage');
+    Route::post('/pdfs/{id}',                      [AdminController::class, 'updatePdf'])->middleware('can:pdfs.manage');
+    Route::delete('/pdfs/{id}',                    [AdminController::class, 'deletePdf'])->middleware('can:pdfs.manage');
+
+    // Roles & Permissions Management
+    Route::get('/roles',                           [AdminController::class, 'getRoles'])->middleware('can:roles.view');
+    Route::post('/roles',                          [AdminController::class, 'createRole'])->middleware('can:roles.manage');
+    Route::put('/roles/{id}',                      [AdminController::class, 'updateRolePermissions'])->middleware('can:roles.manage');
+    Route::get('/permissions',                     [AdminController::class, 'getPermissions'])->middleware('can:roles.view');
 });
