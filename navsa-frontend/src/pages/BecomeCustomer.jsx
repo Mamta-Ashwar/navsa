@@ -2177,7 +2177,7 @@ function BecomeCustomer() {
         <div className="success-card">
           <h2>Application Submitted!</h2>
           <p>Thank you for registering with NAVSA. Your application has been sent to our team for review.</p>
-          <p>Once approved, your account will be activated, and you will be able to log in with the password you created.</p>
+          <p>Please wait for approval of your account. You will be notified when able to login.</p>
         </div>
       </div>
     );

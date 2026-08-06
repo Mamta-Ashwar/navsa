@@ -138,7 +138,17 @@ function OfferModal({ product, onClose, onSaved }) {
 const ALL_TABS = ['General', 'Advanced', 'Extra', 'Images', 'SEO']
 
 const EXTRA_FIELDS = [
-  { key: 'outer_case_quantity', label: 'ORDER QTY ALLOWED',            type: 'text' },
+  { 
+    key: 'order_qty_allowed', 
+    label: 'ORDER QTY ALLOWED', 
+    type: 'select', 
+    options: [
+      { value: 'DEFAULT', label: 'DEFAULT (Layer & Pallet Allowed)' },
+      { value: 'PALLET',  label: 'PALLET (Only Pallet Allowed)' },
+      { value: 'CASE',    label: 'CASE (Case, Layer & Pallet Allowed)' },
+    ] 
+  },
+  { key: 'outer_case_quantity', label: 'Outer Case Quantity',          type: 'number' },
   { key: 'price_list',          label: 'PriceList',                    type: 'text' },
   { key: 'inner_case_quantity', label: 'Units per Case',               type: 'number' },
   { key: 'layer_quantity',      label: 'Layer Quantity',               type: 'number' },
@@ -147,6 +157,7 @@ const EXTRA_FIELDS = [
   { key: 'volume',              label: 'Unit Volume',                  type: 'number' },
   { key: 'bbd',                 label: 'Best before date (indicative)',type: 'text' },
   { key: 'shelf_life',          label: 'Shelf Life in Days',           type: 'number' },
+  { key: 'promotion_price',     label: 'Promotion Price (£)',          type: 'number' },
   { key: 'from_date',           label: 'Promotion starting FromDate',  type: 'date' },
   { key: 'to_date',             label: 'Promotion finish ToDate',      type: 'date' },
   { key: 'comm_code',           label: 'Comm Code',                    type: 'text' },
@@ -198,7 +209,14 @@ function FieldRow({ label, required, children }) {
 }
 
 function EditProductModal({ product, onClose, onSaved }) {
-  const [form, setForm] = useState({ ...product })
+  const [form, setForm] = useState(() => {
+    const currentRule = String(product?.order_qty_allowed || product?.qty_desc || 'DEFAULT').toUpperCase()
+    const normalized = ['DEFAULT', 'PALLET', 'CASE'].includes(currentRule) ? currentRule : 'DEFAULT'
+    return {
+      ...product,
+      order_qty_allowed: normalized
+    }
+  })
   const [tab, setTab]   = useState('General')
   const [busy, setBusy] = useState(false)
   const [allBrands,     setAllBrands]     = useState([])
@@ -258,6 +276,15 @@ function EditProductModal({ product, onClose, onSaved }) {
   const hc = (key, val) => {
     setForm(f => {
       const next = { ...f, [key]: val }
+      if (key === 'order_qty_allowed') {
+        if (val === 'CASE') next.qty_desc = 'Case'
+        else if (val === 'PALLET') next.qty_desc = 'Pallet'
+        else next.qty_desc = 'Default'
+      } else if (key === 'qty_desc') {
+        if (val === 'Case') next.order_qty_allowed = 'CASE'
+        else if (val === 'Pallet') next.order_qty_allowed = 'PALLET'
+        else next.order_qty_allowed = 'DEFAULT'
+      }
       if (key === 'shelf_life') {
         const days = parseInt(val, 10)
         if (!isNaN(days) && days > 0) {
@@ -274,14 +301,14 @@ function EditProductModal({ product, onClose, onSaved }) {
 
   const generateSKU = () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString()
-    hc('reference', code)
+    hc('navsa_product_code', code)
   }
 
   const generateBarcode = () => {
-    let sku = form.reference
+    let sku = form.navsa_product_code || form.reference
     if (!sku) {
       sku = Math.floor(100000 + Math.random() * 900000).toString()
-      hc('reference', sku)
+      hc('navsa_product_code', sku)
     }
     const numericSku = sku.replace(/\D/g, '')
     const paddedSku = numericSku.padStart(9, '0').slice(-9)
@@ -358,7 +385,7 @@ function EditProductModal({ product, onClose, onSaved }) {
       </Row>
       <Row label="SKU / Product Code" required>
         <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
-          <input value={form.reference || ''} onChange={e => hc('reference', e.target.value)} placeholder="e.g. 467357" style={{ ...inp, maxWidth:'200px' }} />
+          <input value={form.navsa_product_code || form.reference || ''} onChange={e => hc('navsa_product_code', e.target.value)} placeholder="e.g. 467357" style={{ ...inp, maxWidth:'200px' }} />
           <button type="button" onClick={generateSKU} style={btnSm}>Generate SKU</button>
         </div>
       </Row>
@@ -481,11 +508,19 @@ function EditProductModal({ product, onClose, onSaved }) {
   )
 }
 
-function ErpImportModal({ onClose, onImportDone }) {
+function ErpImportModal({ onClose, onImportDone, mode = 'erp' }) {
   const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+
+  const isStep1 = mode === 'step1'
+  const modalTitle = isStep1 ? 'Step 1 Converted Excel Import' : 'Bulk ERP Excel Import'
+  const modalSubtitle = isStep1 
+    ? 'Upload converted website data file (Step 1 - Converted file from ERP to Website Data.xlsx)'
+    : 'Upload your ERP system file (e.g. Datafeed from ERP system.xlsx)'
+  const accentGradient = isStep1 ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'linear-gradient(135deg,#10b981,#059669)'
+  const accentColor = isStep1 ? '#3b82f6' : '#10b981'
 
   const handleUpload = async (e) => {
     e.preventDefault()
@@ -496,6 +531,9 @@ function ErpImportModal({ onClose, onImportDone }) {
 
     const formData = new FormData()
     formData.append('file', file)
+    if (mode) {
+      formData.append('mode', mode)
+    }
 
     try {
       const res = await uploadErpExcel(formData)
@@ -514,17 +552,17 @@ function ErpImportModal({ onClose, onImportDone }) {
         <button onClick={onClose} style={{ position:'absolute', top:'16px', right:'16px', background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}><X size={20}/></button>
         
         <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'20px', paddingBottom:'16px', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ width:'46px', height:'46px', borderRadius:'12px', background:'linear-gradient(135deg,#10b981,#059669)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'22px' }}>📊</div>
+          <div style={{ width:'46px', height:'46px', borderRadius:'12px', background: accentGradient, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'22px' }}>📊</div>
           <div>
-            <h3 style={{ margin:0, fontSize:'18px', fontWeight:700 }}>Bulk ERP Excel Import</h3>
-            <p style={{ margin:'2px 0 0', color:'#94a3b8', fontSize:'12px' }}>Upload your ERP system file (e.g. Datafeed from ERP system.xlsx)</p>
+            <h3 style={{ margin:0, fontSize:'18px', fontWeight:700 }}>{modalTitle}</h3>
+            <p style={{ margin:'2px 0 0', color:'#94a3b8', fontSize:'12px' }}>{modalSubtitle}</p>
           </div>
         </div>
 
         {!result ? (
           <form onSubmit={handleUpload}>
             <div style={{ border:'2px dashed rgba(255,255,255,0.2)', borderRadius:'12px', padding:'24px', textAlign:'center', background:'rgba(255,255,255,0.02)', marginBottom:'20px' }}>
-              <Upload size={36} style={{ color:'#10b981', marginBottom:'12px' }} />
+              <Upload size={36} style={{ color: accentColor, marginBottom:'12px' }} />
               <div style={{ fontSize:'14px', fontWeight:600, marginBottom:'4px' }}>Select or Drag ERP Excel File (.xlsx, .xls)</div>
               <div style={{ fontSize:'12px', color:'#94a3b8', marginBottom:'16px' }}>Existing products will be updated; new products will be created automatically.</div>
               <input
@@ -540,7 +578,7 @@ function ErpImportModal({ onClose, onImportDone }) {
             </div>
 
             {error && (
-              <div style={{ background:'rgba(239,68,68,0.15)', border:'1px solid rgba(239,68,68,0.3)', color:'#ef4444', padding:'12px 16px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px' }}>
+              <div style={{ background:'rgba(239,68,68,0.15)', border:'1px solid rgba(239,68,68,0.3)', color:'#ef4444', padding:'14px 16px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px', whiteSpace:'pre-line', lineHeight:1.5, maxHeight:'220px', overflowY:'auto' }}>
                 ⚠️ {error}
               </div>
             )}
@@ -604,6 +642,7 @@ export default function AdminProducts() {
   const [editModal, setEditModal]   = useState(null)
   const [detailModal, setDetailModal] = useState(null)
   const [erpModalOpen, setErpModalOpen] = useState(false)
+  const [step1ModalOpen, setStep1ModalOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -665,7 +704,8 @@ export default function AdminProducts() {
       {offerModal   && <OfferModal product={offerModal} onClose={() => setOfferModal(null)} onSaved={load} />}
       {editModal    && <EditProductModal product={editModal} onClose={() => setEditModal(null)} onSaved={load} />}
       {detailModal  && <ProductDetailModal product={detailModal} onClose={() => setDetailModal(null)} />}
-      {erpModalOpen && <ErpImportModal onClose={() => setErpModalOpen(false)} onImportDone={load} />}
+      {erpModalOpen   && <ErpImportModal mode="erp" onClose={() => setErpModalOpen(false)} onImportDone={load} />}
+      {step1ModalOpen && <ErpImportModal mode="step1" onClose={() => setStep1ModalOpen(false)} onImportDone={load} />}
 
       <div className="admin-flex-between mb-6">
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
@@ -679,6 +719,13 @@ export default function AdminProducts() {
             style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', gap: '8px', padding: '10px 18px', fontWeight: 600 }}
           >
             <Upload size={18} /> Bulk ERP Import (.xlsx)
+          </button>
+          <button
+            onClick={() => setStep1ModalOpen(true)}
+            className="admin-btn"
+            style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', border: 'none', gap: '8px', padding: '10px 18px', fontWeight: 600 }}
+          >
+            <Upload size={18} /> Step 1 Converted Import (.xlsx)
           </button>
         </div>
         <button onClick={() => setEditModal(BLANK_PRODUCT)} className="admin-btn admin-btn-primary">
@@ -718,19 +765,22 @@ export default function AdminProducts() {
             <table className="admin-table">
               <thead>
                 <tr>
-                  {['Ref', 'Description', 'Brand', 'Category', 'Stock', 'Web', 'Offer', 'Best Offer', 'New', 'Actions'].map(h => (
-                    <th key={h}>{h}</th>
-                  ))}
+                  <th style={{ width: '130px' }}>Product Code</th>
+                  <th style={{ minWidth: '350px' }}>Description</th>
+                  <th style={{ width: '160px' }}>Brand</th>
+                  <th style={{ width: '160px' }}>Category</th>
+                  <th style={{ width: '90px' }}>Stock</th>
+                  <th style={{ width: '120px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.data?.map(p => (
                   <tr key={p.id} style={{ opacity: p.deleted ? 0.5 : 1, cursor:'pointer' }} onClick={() => setDetailModal(p)}>
-                    <td style={{ color: '#94a3b8' }}>{p.reference}</td>
-                    <td style={{ maxWidth: '220px' }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{p.description}</div>
+                    <td style={{ color: '#94a3b8', whiteSpace: 'nowrap', fontWeight: 600 }}>{p.navsa_product_code || p.reference || '—'}</td>
+                    <td style={{ minWidth: '350px', maxWidth: '600px' }}>
+                      <div style={{ fontWeight: 500, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</div>
                       {p.is_offer && p.offer_label && (
-                        <span className="admin-badge admin-badge-warning" style={{ marginTop: '4px' }}>{p.offer_label}</span>
+                        <span className="admin-badge admin-badge-warning" style={{ marginTop: '4px', display: 'inline-block' }}>{p.offer_label}</span>
                       )}
                     </td>
                     <td>{p.brand?.brand_name || '—'}</td>
@@ -739,30 +789,6 @@ export default function AdminProducts() {
                       <span className={`admin-badge ${p.stock_quantity > 50 ? 'admin-badge-success' : p.stock_quantity > 0 ? 'admin-badge-warning' : 'admin-badge-danger'}`}>
                         {p.stock_quantity ?? 0}
                       </span>
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.live_for_web} onChange={() => !p.deleted && doToggleWeb(p.id)} />
-                        <span className="admin-slider"></span>
-                      </label>
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                       <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.is_offer} onChange={() => !p.deleted && doToggleOffer(p)} />
-                        <span className="admin-slider"></span>
-                      </label>
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                       <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.is_best_offer} onChange={() => !p.deleted && doToggleBestOffer(p.id)} />
-                        <span className="admin-slider"></span>
-                      </label>
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                       <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.is_new_arrival} onChange={() => !p.deleted && doToggleNewArrival(p.id)} />
-                        <span className="admin-slider"></span>
-                      </label>
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>

@@ -201,7 +201,7 @@ function Basket() {
                     <button onClick={() => changePalletQty(item.id, 1)}>+</button>
                   </div>
 
-                  {(item.caseQty > 0 || String(item.qty_desc || '').toLowerCase() === 'case') && (
+                  {(item.caseQty > 0 || String(item.order_qty_allowed || item.qty_desc || '').toLowerCase() === 'case') && (
                     <div className="basket-counter">
                       <button onClick={() => changeCaseQty(item.id, -1)}>-</button>
                       <span>Cases ({item.caseQty || 0})</span>

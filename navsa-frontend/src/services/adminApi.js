@@ -133,11 +133,30 @@
 const BASE = import.meta.env.VITE_API_URL || '/api'
 const KEY = import.meta.env.VITE_ADMIN_KEY || 'navsa2024'
 
-const headers = () => ({
-  'Content-Type': 'application/json',
-  'Accept': 'application/json',
-  'X-Admin-Key': KEY,
-})
+const headers = () => {
+  const token = localStorage.getItem('admin_token')
+  const h = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Admin-Key': KEY,
+  }
+  if (token) {
+    h['Authorization'] = `Bearer ${token}`
+  }
+  return h
+}
+
+const fileHeaders = () => {
+  const token = localStorage.getItem('admin_token')
+  const h = {
+    'X-Admin-Key': KEY,
+    'Accept': 'application/json',
+  }
+  if (token) {
+    h['Authorization'] = `Bearer ${token}`
+  }
+  return h
+}
 
 async function readResponse(res) {
   const data = await res.json().catch(() => ({}))
@@ -182,10 +201,7 @@ export const clearAllOffers = () => req('PATCH', '/products/clear-offers')
 export const uploadErpExcel = async (formData) => {
   const res = await fetch(`${BASE}/admin/import-erp`, {
     method: 'POST',
-    headers: {
-      'X-Admin-Key': KEY,
-      Accept: 'application/json',
-    },
+    headers: fileHeaders(),
     body: formData,
   })
   return readResponse(res)
@@ -228,10 +244,7 @@ export const getPdfs = () => req('GET', '/pdfs')
 export const uploadPdf = async (formData) => {
   const res = await fetch(`${BASE}/admin/pdfs`, {
     method: 'POST',
-    headers: {
-      'X-Admin-Key': KEY,
-      Accept: 'application/json',
-    },
+    headers: fileHeaders(),
     body: formData,
   })
   return readResponse(res)
@@ -240,10 +253,7 @@ export const uploadPdf = async (formData) => {
 export const updatePdf = async (id, formData) => {
   const res = await fetch(`${BASE}/admin/pdfs/${id}`, {
     method: 'POST',
-    headers: {
-      'X-Admin-Key': KEY,
-      Accept: 'application/json',
-    },
+    headers: fileHeaders(),
     body: formData,
   })
   return readResponse(res)
@@ -260,10 +270,7 @@ export const getBanners = (position = '') => {
 async function sendBannerForm(path, formData) {
   const res = await fetch(`${BASE}/admin${path}`, {
     method: 'POST',
-    headers: {
-      'X-Admin-Key': KEY,
-      Accept: 'application/json',
-    },
+    headers: fileHeaders(),
     body: formData,
   })
   return readResponse(res)

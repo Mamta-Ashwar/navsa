@@ -75,49 +75,57 @@ class ImportErpProducts extends Command
             $this->newLine();
         }
 
+        $headerMap = [];
+        foreach ($headers as $i => $h) {
+            $cleanHeader = strtolower(trim(preg_replace('/\s+/', ' ', (string)$h)));
+            $headerMap[$cleanHeader] = $i;
+        }
+
+        $codeCol = $headerMap['navsa product code'] ?? $headerMap['reference'] ?? 1;
+
         foreach ($rows as $rowIndex => $row) {
             try {
-                $supplierIndex = trim((string) ($row[0] ?? ''));
-                $reference     = trim((string) ($row[1] ?? ''));
-                $description   = trim((string) ($row[2] ?? ''));
-                $unitsOf       = trim((string) ($row[3] ?? ''));
-                $innerCase     = $this->toNumberOrNull($row[4] ?? null);
-                $outerCase     = $this->toNumberOrNull($row[5] ?? null);
-                $qtyDesc       = trim((string) ($row[6] ?? ''));
-                $barcodeEan    = trim((string) ($row[7] ?? ''));
-                $barcodeCase   = trim((string) ($row[8] ?? ''));
-                $groupDesc     = trim((string) ($row[9] ?? ''));
-                $vatCode       = trim((string) ($row[10] ?? ''));
-                $layerQty      = $this->toNumberOrNull($row[11] ?? null);
-                $palletQty     = $this->toNumberOrNull($row[12] ?? null);
-                $supplierRef   = trim((string) ($row[13] ?? ''));
-                $cost          = $this->toNumberOrNull($row[14] ?? null);
-                $costFromDate  = $this->toDateOrNull($row[15] ?? null);
-                $costToDate    = $this->toDateOrNull($row[16] ?? null);
-                $weight        = $this->toNumberOrNull($row[17] ?? null);
-                $volume        = $this->toNumberOrNull($row[18] ?? null);
-                $shelfLife     = $this->toNumberOrNull($row[19] ?? null);
-                $bbd           = $this->toDateOrNull($row[20] ?? null);
-                $priceList     = trim((string) ($row[21] ?? ''));
-                $price         = $this->toNumberOrNull($row[22] ?? null);
-                $fromDate      = $this->toDateOrNull($row[23] ?? null);
-                $toDate        = $this->toDateOrNull($row[24] ?? null);
-                $commCode      = trim((string) ($row[25] ?? ''));
-                $intraCountry  = trim((string) ($row[26] ?? ''));
-                $intraType     = trim((string) ($row[27] ?? ''));
-                $webShortDesc  = trim((string) ($row[28] ?? ''));
-                $webLongDesc   = trim((string) ($row[29] ?? ''));
-                $webImage      = trim((string) ($row[30] ?? ''));
-                $liveForWeb    = $row[31] ?? 0;
-                $encoreImage   = trim((string) ($row[32] ?? ''));
+                $supplierIndex    = trim((string) ($row[0] ?? ''));
+                $navsaProductCode = trim((string) ($row[$codeCol] ?? $row[1] ?? ''));
+                $description      = trim((string) ($row[2] ?? ''));
+                $unitsOf          = trim((string) ($row[3] ?? ''));
+                $innerCase        = $this->toNumberOrNull($row[4] ?? null);
+                $outerCase        = $this->toNumberOrNull($row[5] ?? null);
+                $qtyDesc          = trim((string) ($row[6] ?? ''));
+                $barcodeEan       = trim((string) ($row[7] ?? ''));
+                $barcodeCase      = trim((string) ($row[8] ?? ''));
+                $groupDesc        = trim((string) ($row[9] ?? ''));
+                $vatCode          = trim((string) ($row[10] ?? ''));
+                $layerQty         = $this->toNumberOrNull($row[11] ?? null);
+                $palletQty        = $this->toNumberOrNull($row[12] ?? null);
+                $supplierRef      = trim((string) ($row[13] ?? ''));
+                $cost             = $this->toNumberOrNull($row[14] ?? null);
+                $costFromDate     = $this->toDateOrNull($row[15] ?? null);
+                $costToDate       = $this->toDateOrNull($row[16] ?? null);
+                $weight           = $this->toNumberOrNull($row[17] ?? null);
+                $volume           = $this->toNumberOrNull($row[18] ?? null);
+                $shelfLife        = $this->toNumberOrNull($row[19] ?? null);
+                $bbd              = $this->toDateOrNull($row[20] ?? null);
+                $priceList        = trim((string) ($row[21] ?? ''));
+                $price            = $this->toNumberOrNull($row[22] ?? null);
+                $fromDate         = $this->toDateOrNull($row[23] ?? null);
+                $toDate           = $this->toDateOrNull($row[24] ?? null);
+                $commCode         = trim((string) ($row[25] ?? ''));
+                $intraCountry     = trim((string) ($row[26] ?? ''));
+                $intraType        = trim((string) ($row[27] ?? ''));
+                $webShortDesc     = trim((string) ($row[28] ?? ''));
+                $webLongDesc      = trim((string) ($row[29] ?? ''));
+                $webImage         = trim((string) ($row[30] ?? ''));
+                $liveForWeb       = $row[31] ?? 0;
+                $encoreImage      = trim((string) ($row[32] ?? ''));
 
-                if (empty($description) && empty($reference)) {
+                if (empty($description) && empty($navsaProductCode)) {
                     $skipped++;
                     $bar->advance();
                     continue;
                 }
 
-                $reference = !empty($reference) ? $reference : null;
+                $navsaProductCode = !empty($navsaProductCode) ? $navsaProductCode : 'PROD-' . ($rowIndex + 1);
 
                 $supplierId = !empty($supplierIndex)
                     ? ($suppliers[trim($supplierIndex)] ?? null)
@@ -158,14 +166,14 @@ class ImportErpProducts extends Command
                     $brandId = $brands[$brandName];
                 }
 
-                $matchKey = !empty($reference)
-                    ? ['reference' => $reference]
+                $matchKey = !empty($navsaProductCode)
+                    ? ['navsa_product_code' => $navsaProductCode]
                     : ['description' => $description];
 
                 Product::updateOrCreate(
                     $matchKey,
                     [
-                        'reference'             => $reference,
+                        'navsa_product_code'    => $navsaProductCode,
                         'supplier_id'           => $supplierId,
                         'category_id'           => $categoryId,
                         'sub_category_id'       => $subCategoryId,

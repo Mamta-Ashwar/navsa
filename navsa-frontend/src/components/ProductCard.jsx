@@ -134,9 +134,9 @@ function ProductCard({
     activeContainerIsDry &&
     (productStorageType === 'Frozen' || productStorageType === 'Chilled')
 
-  const qtyType = String(product?.qty_desc || '').trim().toLowerCase()
-  const isCaseAllowed = qtyType === 'case'
-  const isLayerAllowed = qtyType !== 'pallet'
+  const qtyRule = String(product?.order_qty_allowed || product?.qty_desc || 'DEFAULT').trim().toLowerCase()
+  const isCaseAllowed = qtyRule === 'case'
+  const isLayerAllowed = qtyRule !== 'pallet'
   const isPalletAllowed = true
 
   const totalCases =
