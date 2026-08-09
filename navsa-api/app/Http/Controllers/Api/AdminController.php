@@ -35,6 +35,89 @@ class AdminController extends Controller
         return response()->json(['error' => 'Unauthorized'], 401);
     }
 
+    /**
+     * Directory that is served by the React site as /products/<filename>.
+     *
+     * Local development uses the sibling navsa-frontend/public/products folder.
+     * Production can override this with PRODUCT_IMAGE_DIRECTORY in navsa-api/.env.
+     */
+    private function productImageDirectory(): string
+    {
+        $configured = trim((string) env('PRODUCT_IMAGE_DIRECTORY', ''));
+        $directory = $configured !== ''
+            ? $configured
+            : base_path('../navsa-frontend/public/products');
+
+        return rtrim($directory, "\\/");
+    }
+
+    private function imageMetadataForProduct(Product $product): array
+    {
+        $manualImages = DB::table('product_images')
+            ->where('product_id', $product->id)
+            ->orderBy('id')
+            ->get();
+
+        $primary = $manualImages->firstWhere('is_primary', 1);
+        $erpImage = $product->web_image;
+        $manualImage = $primary?->image_name;
+
+        return [
+            'erp_web_image' => $erpImage,
+            'manual_web_image' => $manualImage,
+            'effective_web_image' => $manualImage ?: $erpImage,
+            'selected_image_source' => $primary ? 'manual' : 'erp',
+            'selected_image_id' => $primary?->id,
+            'manual_images' => $manualImages->map(function ($image) {
+                return [
+                    'id' => (int) $image->id,
+                    'image_name' => $image->image_name,
+                    'is_primary' => (bool) $image->is_primary,
+                    'created_at' => $image->created_at,
+                    'image_url' => '/products/' . rawurlencode((string) $image->image_name),
+                ];
+            })->values()->all(),
+        ];
+    }
+
+    private function attachAdminImageMetadata($products): void
+    {
+        $collection = collect($products);
+        $ids = $collection->pluck('id')->filter()->values()->all();
+
+        if (empty($ids)) {
+            return;
+        }
+
+        $imagesByProduct = DB::table('product_images')
+            ->whereIn('product_id', $ids)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('product_id');
+
+        foreach ($collection as $product) {
+            $manualImages = collect($imagesByProduct->get($product->id, collect()));
+            $primary = $manualImages->firstWhere('is_primary', 1);
+            $erpImage = $product->web_image;
+            $manualImage = $primary?->image_name;
+
+            $product->setAttribute('erp_web_image', $erpImage);
+            $product->setAttribute('manual_web_image', $manualImage);
+            $product->setAttribute('effective_web_image', $manualImage ?: $erpImage);
+            $product->setAttribute('selected_image_source', $primary ? 'manual' : 'erp');
+            $product->setAttribute('selected_image_id', $primary?->id);
+            $product->setAttribute('manual_images', $manualImages->map(function ($image) {
+                return [
+                    'id' => (int) $image->id,
+                    'image_name' => $image->image_name,
+                    'is_primary' => (bool) $image->is_primary,
+                    'created_at' => $image->created_at,
+                    'image_url' => '/products/' . rawurlencode((string) $image->image_name),
+                ];
+            })->values()->all());
+        }
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -206,7 +289,222 @@ class AdminController extends Controller
         if ($request->filled('live_for_web')) $q->where('live_for_web', $request->live_for_web);
         if ($request->filled('low_stock'))    $q->where('stock_quantity', '<=', 5);
 
-        return $q->orderBy('id', 'desc')->paginate((int)$request->get('per_page', 25));
+        $paginator = $q->orderBy('id', 'desc')->paginate((int)$request->get('per_page', 25));
+        $this->attachAdminImageMetadata($paginator->getCollection());
+
+        return $paginator;
+    }
+
+    public function uploadProductImage(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $product = Product::findOrFail($id);
+
+        // No dimension restriction: 1600 x 1600 is an informational
+        // recommendation only.
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,jpg,png,gif,webp',
+        ]);
+
+        $file = $request->file('image');
+        $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg'));
+        if ($extension === 'jpeg') {
+            $extension = 'jpg';
+        }
+
+        $directory = $this->productImageDirectory();
+        if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) {
+            return response()->json([
+                'message' => 'Product image folder could not be created. Check PRODUCT_IMAGE_DIRECTORY and folder permissions.',
+            ], 500);
+        }
+
+        $filename = sprintf(
+            'manual-product-%d-%s-%s.%s',
+            $product->id,
+            date('YmdHis'),
+            bin2hex(random_bytes(4)),
+            $extension
+        );
+
+        $targetPath = $directory . DIRECTORY_SEPARATOR . $filename;
+
+        try {
+            $file->move($directory, $filename);
+
+            DB::transaction(function () use ($product, $filename) {
+                // Keep every previous manual upload, but make the newest
+                // upload the website image immediately.
+                DB::table('product_images')
+                    ->where('product_id', $product->id)
+                    ->update(['is_primary' => 0]);
+
+                DB::table('product_images')->insert([
+                    'product_id' => $product->id,
+                    'image_name' => $filename,
+                    'is_primary' => 1,
+                    'created_at' => now(),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+            throw $e;
+        }
+
+        return response()->json(array_merge([
+            'message' => 'Product image uploaded successfully.',
+            'product_id' => $product->id,
+        ], $this->imageMetadataForProduct($product)));
+    }
+
+    public function selectProductImage(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $product = Product::findOrFail($id);
+
+        $validated = $request->validate([
+            'source' => 'required|in:erp,manual',
+            'image_id' => 'nullable|integer',
+        ]);
+
+        DB::transaction(function () use ($product, $validated) {
+            DB::table('product_images')
+                ->where('product_id', $product->id)
+                ->update(['is_primary' => 0]);
+
+            if ($validated['source'] === 'manual') {
+                $imageId = (int) ($validated['image_id'] ?? 0);
+                $updated = DB::table('product_images')
+                    ->where('product_id', $product->id)
+                    ->where('id', $imageId)
+                    ->update(['is_primary' => 1]);
+
+                if ($updated !== 1) {
+                    abort(422, 'The selected image does not belong to this product.');
+                }
+            }
+            // source=erp intentionally leaves all manual rows non-primary.
+            // The public API then falls back to products.web_image.
+        });
+
+        return response()->json(array_merge([
+            'message' => 'Website image updated successfully.',
+            'product_id' => $product->id,
+        ], $this->imageMetadataForProduct($product)));
+    }
+
+    public function removeProductImage(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $product = Product::findOrFail($id);
+
+        $validated = $request->validate([
+            'source' => 'required|in:erp,manual',
+            'image_id' => 'nullable|integer',
+        ]);
+
+        $fileToDelete = null;
+
+        DB::transaction(function () use ($product, $validated, &$fileToDelete) {
+            if ($validated['source'] === 'erp') {
+                if (!trim((string) $product->web_image)) {
+                    abort(422, 'This product does not have an ERP WebImage to remove.');
+                }
+
+                // Remove the ERP image from this product without deleting the
+                // underlying shared/source file from the products directory.
+                // A future ERP import can restore the WebImage value if it is
+                // still present in the Datafeed.
+                $product->web_image = null;
+                $product->save();
+
+                // If ERP was selected (no manual primary), promote the newest
+                // remaining manual image so the public product does not
+                // unnecessarily lose its image.
+                $hasPrimaryManual = DB::table('product_images')
+                    ->where('product_id', $product->id)
+                    ->where('is_primary', 1)
+                    ->exists();
+
+                if (!$hasPrimaryManual) {
+                    $fallbackId = DB::table('product_images')
+                        ->where('product_id', $product->id)
+                        ->orderByDesc('id')
+                        ->value('id');
+
+                    if ($fallbackId) {
+                        DB::table('product_images')
+                            ->where('product_id', $product->id)
+                            ->where('id', $fallbackId)
+                            ->update(['is_primary' => 1]);
+                    }
+                }
+
+                return;
+            }
+
+            $imageId = (int) ($validated['image_id'] ?? 0);
+            $image = DB::table('product_images')
+                ->where('product_id', $product->id)
+                ->where('id', $imageId)
+                ->first();
+
+            if (!$image) {
+                abort(422, 'The selected image does not belong to this product.');
+            }
+
+            $wasPrimary = (bool) $image->is_primary;
+            $fileToDelete = basename((string) $image->image_name);
+
+            DB::table('product_images')
+                ->where('product_id', $product->id)
+                ->where('id', $imageId)
+                ->delete();
+
+            if ($wasPrimary) {
+                // Prefer ERP as the fallback when it still exists. If there is
+                // no ERP image, promote the newest remaining manual image.
+                if (!trim((string) $product->web_image)) {
+                    $fallbackId = DB::table('product_images')
+                        ->where('product_id', $product->id)
+                        ->orderByDesc('id')
+                        ->value('id');
+
+                    if ($fallbackId) {
+                        DB::table('product_images')
+                            ->where('product_id', $product->id)
+                            ->where('id', $fallbackId)
+                            ->update(['is_primary' => 1]);
+                    }
+                }
+            }
+        });
+
+        if ($fileToDelete) {
+            $directory = $this->productImageDirectory();
+            $targetPath = $directory . DIRECTORY_SEPARATOR . $fileToDelete;
+
+            // Only unlink files created by this application's manual uploader.
+            // ERP/source image files are never physically deleted here.
+            if (
+                str_starts_with($fileToDelete, 'manual-product-') &&
+                is_file($targetPath)
+            ) {
+                @unlink($targetPath);
+            }
+        }
+
+        $product->refresh();
+
+        return response()->json(array_merge([
+            'message' => 'Image removed successfully.',
+            'product_id' => $product->id,
+        ], $this->imageMetadataForProduct($product)));
     }
 
     public function createProduct(Request $request)
@@ -217,18 +515,21 @@ class AdminController extends Controller
             'description'        => 'required|string|max:500',
             'brand_id'           => 'nullable|integer|exists:brands,id',
             'category_id'        => 'nullable|integer|exists:categories,id',
-            'navsa_product_code' => 'nullable|string|max:100',
+            'navsa_product_code' => ['required', 'string', 'max:100', Rule::unique('products', 'navsa_product_code')],
             'price'              => 'nullable|numeric|min:0',
             'price_list'         => 'nullable|string|max:100',
             'cost'               => 'nullable|numeric|min:0',
             'stock_quantity'     => 'nullable|integer|min:0',
             'barcode_ean'        => 'nullable|string|max:50',
             'barcode_case'       => 'nullable|string|max:50',
+            'live_for_web'       => 'nullable|boolean',
+            'qty_desc'            => 'nullable|string|max:50',
+            'order_qty_allowed'   => 'nullable|in:DEFAULT,PALLET,CASE',
         ]);
 
         $allowed = [
             'navsa_product_code', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
-            'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc',
+            'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc', 'order_qty_allowed',
             'barcode_ean', 'barcode_case', 'group_desc', 'vat_code',
             'layer_quantity', 'pallet_quantity', 'supplier_reference',
             'cost', 'cost_from_date', 'cost_to_date', 'price_list', 'price', 'from_date', 'to_date',
@@ -238,15 +539,9 @@ class AdminController extends Controller
         ];
 
         $data = $request->only($allowed);
-        if ($request->has('order_qty_allowed')) {
-            $val = strtoupper($request->input('order_qty_allowed'));
-            $data['qty_desc'] = match ($val) {
-                'CASE' => 'Case',
-                'PALLET' => 'Pallet',
-                default => 'Default',
-            };
+        if (array_key_exists('qty_desc', $data)) {
+            $data['qty_desc'] = $this->normalizeQtyDesc($data['qty_desc']);
         }
-        unset($data['order_qty_allowed']);
 
         $product = Product::create($data);
         return response()->json($product->load(['brand', 'category']), 201);
@@ -261,18 +556,20 @@ class AdminController extends Controller
             'description'        => 'sometimes|string|max:500',
             'brand_id'           => 'nullable|integer|exists:brands,id',
             'category_id'        => 'nullable|integer|exists:categories,id',
-            'navsa_product_code' => 'nullable|string|max:100',
             'price'              => 'nullable|numeric|min:0',
             'price_list'         => 'nullable|string|max:100',
             'cost'               => 'nullable|numeric|min:0',
             'stock_quantity'     => 'nullable|integer|min:0',
             'barcode_ean'        => 'nullable|string|max:50',
             'barcode_case'       => 'nullable|string|max:50',
+            'live_for_web'       => 'nullable|boolean',
+            'qty_desc'            => 'nullable|string|max:50',
+            'order_qty_allowed'   => 'nullable|in:DEFAULT,PALLET,CASE',
         ]);
 
         $allowed = [
-            'navsa_product_code', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
-            'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc',
+            'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
+            'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc', 'order_qty_allowed',
             'barcode_ean', 'barcode_case', 'group_desc', 'vat_code',
             'layer_quantity', 'pallet_quantity', 'supplier_reference',
             'cost', 'cost_from_date', 'cost_to_date', 'price_list', 'price', 'from_date', 'to_date',
@@ -282,15 +579,9 @@ class AdminController extends Controller
         ];
 
         $data = $request->only($allowed);
-        if ($request->has('order_qty_allowed')) {
-            $val = strtoupper($request->input('order_qty_allowed'));
-            $data['qty_desc'] = match ($val) {
-                'CASE' => 'Case',
-                'PALLET' => 'Pallet',
-                default => 'Default',
-            };
+        if (array_key_exists('qty_desc', $data)) {
+            $data['qty_desc'] = $this->normalizeQtyDesc($data['qty_desc']);
         }
-        unset($data['order_qty_allowed']);
 
         $product->update($data);
         return response()->json($product->fresh(['brand', 'category']));
@@ -1436,6 +1727,7 @@ class AdminController extends Controller
             $importedCount = 0;
             $createdCount  = 0;
             $updatedCount  = 0;
+            $restoredCount = 0;
             $skippedCount  = 0;
             $errorCount    = 0;
             $unknownCodes  = [];
@@ -1565,7 +1857,9 @@ class AdminController extends Controller
                     $outerCase    = $outerCaseIdx !== null ? $this->toNumberOrNull($row[$outerCaseIdx] ?? null) : null;
 
                     $qtyDescIdx = $headerMap['qtydesc'] ?? ($headerMap['qty_desc'] ?? null);
-                    $qtyDesc    = $qtyDescIdx !== null ? trim((string) ($row[$qtyDescIdx] ?? '')) : null;
+                    $qtyDesc    = $qtyDescIdx !== null
+                        ? $this->normalizeQtyDesc($row[$qtyDescIdx] ?? null)
+                        : null;
 
                     $rawOrderQty = strtoupper(trim((string) ($row[$headerMap['order qty allowed'] ?? ($headerMap['orderqtyallowed'] ?? null)] ?? 'DEFAULT')));
                     $orderQtyAllowed = in_array($rawOrderQty, ['DEFAULT', 'PALLET', 'CASE']) ? $rawOrderQty : 'DEFAULT';
@@ -1613,18 +1907,20 @@ class AdminController extends Controller
                     $priceList    = $priceListIdx !== null ? trim((string) ($row[$priceListIdx] ?? '')) : null;
 
                     $promPriceIdx = $headerMap['promotion_price'] ?? ($headerMap['promotion price'] ?? null);
-                    $promStartIdx = $headerMap['promotion starting fromdate'] ?? ($headerMap['fromdate'] ?? ($headerMap['from_date'] ?? null));
-                    $promEndIdx   = $headerMap['promotion finish todate'] ?? ($headerMap['todate'] ?? ($headerMap['to_date'] ?? null));
+                    $fromDateIdx   = $headerMap['fromdate'] ?? ($headerMap['from_date'] ?? null);
+                    $toDateIdx     = $headerMap['todate'] ?? ($headerMap['to_date'] ?? null);
 
                     $promotionPrice = $promPriceIdx !== null ? $this->toNumberOrNull($row[$promPriceIdx] ?? null) : null;
-                    $fromDate       = $promStartIdx !== null ? $this->toDateOrNull($row[$promStartIdx] ?? null) : null;
-                    $toDate         = $promEndIdx !== null ? $this->toDateOrNull($row[$promEndIdx] ?? null) : null;
+                    $fromDate       = $fromDateIdx !== null ? $this->toDateOrNull($row[$fromDateIdx] ?? null) : null;
+                    $toDate         = $toDateIdx !== null ? $this->toDateOrNull($row[$toDateIdx] ?? null) : null;
 
                     $commCodeIdx     = $headerMap['commcode'] ?? ($headerMap['comm_code'] ?? null);
                     $intraCountryIdx = $headerMap['intracountry'] ?? ($headerMap['intra_country'] ?? null);
+                    $intraTypeIdx    = $headerMap['intratype'] ?? ($headerMap['intra_type'] ?? null);
 
                     $commCode     = $commCodeIdx !== null ? trim((string) ($row[$commCodeIdx] ?? '')) : null;
                     $intraCountry = $intraCountryIdx !== null ? trim((string) ($row[$intraCountryIdx] ?? '')) : null;
+                    $intraType    = $intraTypeIdx !== null ? trim((string) ($row[$intraTypeIdx] ?? '')) : null;
 
                     $webShortIdx = $headerMap['webshortdescription'] ?? ($headerMap['web_short_description'] ?? null);
                     $webLongIdx  = $headerMap['weblongdescription'] ?? ($headerMap['web_long_description'] ?? null);
@@ -1634,9 +1930,20 @@ class AdminController extends Controller
                     $webLong  = $webLongIdx !== null ? trim((string) ($row[$webLongIdx] ?? '')) : null;
                     $webImage = $webImgIdx !== null ? trim((string) ($row[$webImgIdx] ?? '')) : null;
 
-                    $liveForWeb = isset($headerMap['liveforweb']) && isset($row[$headerMap['liveforweb']]) ? (int)$row[$headerMap['liveforweb']] : 1;
+                    $liveForWebIdx = $headerMap['liveforweb'] ?? ($headerMap['live_for_web'] ?? null);
+                    $liveForWeb = $liveForWebIdx !== null
+                        ? $this->toBoolean01($row[$liveForWebIdx] ?? 0)
+                        : 0;
 
-                    $navsaProductCode = !empty($navsaProductCode) ? $navsaProductCode : 'PROD-' . ($rowIndex + 1);
+                    // NAVSA Product Code is the immutable ERP identifier.
+                    // Never invent a random/fallback code during import.
+                    if ($navsaProductCode === '') {
+                        $errorCount++;
+                        \Illuminate\Support\Facades\Log::warning(
+                            'ERP Import skipped row ' . ($rowIndex + 2) . ': missing Reference / NAVSA Product Code.'
+                        );
+                        continue;
+                    }
 
                     $brandName     = trim((string) ($row[$headerMap['brand'] ?? ($headerMap['brand '] ?? null)] ?? ''));
                     $masterGroup   = trim((string) ($row[$headerMap['master group'] ?? null] ?? ''));
@@ -1698,6 +2005,7 @@ class AdminController extends Controller
                         : ['description' => $description];
 
                     $existing = Product::where($matchKey)->first();
+                    $wasDeleted = $existing && (bool) $existing->deleted;
 
                     $payload = [
                         'navsa_product_code'    => $navsaProductCode,
@@ -1726,17 +2034,23 @@ class AdminController extends Controller
                         'bbd'                   => $bbd,
                         'price_list'            => $priceList ?: null,
                         'promotion_price'       => $promotionPrice,
-                        'promotion_start_date'  => $fromDate,
-                        'promotion_finish_date' => $toDate,
+                        // ERP FromDate / ToDate belong to the ERP date fields only.
+                        // Manual promotion dates are managed separately and are not overwritten by ERP import.
                         'from_date'             => $fromDate,
                         'to_date'               => $toDate,
                         'comm_code'             => $commCode ?: null,
                         'intra_country'         => $intraCountry ?: null,
+                        'intra_type'            => $intraType ?: null,
                         'price'                 => $price,
                         'web_short_description' => $webShort ?: null,
                         'web_long_description'  => $webLong ?: null,
                         'web_image'             => $webImage ?: null,
-                        'live_for_web'          => $liveForWeb ? 1 : 0,
+                        'live_for_web'          => $liveForWeb,
+
+                        // The uploaded ERP/Step 1 file is authoritative for catalogue membership.
+                        // If a matching product was previously moved to Deleted Items, importing
+                        // that product again automatically restores it to the active catalogue.
+                        'deleted'               => false,
                     ];
 
                     if ($hasOrderQtyAllowed) {
@@ -1747,6 +2061,9 @@ class AdminController extends Controller
 
                     if ($existing) {
                         $updatedCount++;
+                        if ($wasDeleted) {
+                            $restoredCount++;
+                        }
                     } else {
                         $createdCount++;
                     }
@@ -1765,6 +2082,7 @@ class AdminController extends Controller
                 'imported' => $importedCount,
                 'created' => $createdCount,
                 'updated' => $updatedCount,
+                'restored' => $restoredCount,
                 'skipped' => $skippedCount,
                 'errors' => $errorCount,
                 'unknown_group_codes' => $unknownCodes
@@ -1777,6 +2095,37 @@ class AdminController extends Controller
                 @unlink($tempFilePath);
             }
         }
+    }
+
+    private function normalizeQtyDesc($value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+
+        if ($raw === '') {
+            return null;
+        }
+
+        return match (strtolower($raw)) {
+            'case'   => 'Case',
+            'layer'  => 'Layer',
+            'pallet' => 'Pallet',
+            default  => $raw,
+        };
+    }
+
+    private function toBoolean01($value): int
+    {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+
+        if (is_numeric($value)) {
+            return ((int) $value) === 1 ? 1 : 0;
+        }
+
+        $normalised = strtolower(trim((string) $value));
+
+        return in_array($normalised, ['1', 'true', 'yes', 'y', 'live'], true) ? 1 : 0;
     }
 
     private function toNumberOrNull($value): ?float

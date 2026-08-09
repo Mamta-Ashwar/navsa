@@ -5,9 +5,44 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
+    private function applyManualImageOverrides($products): void
+    {
+        $collection = collect($products);
+        $ids = $collection->pluck('id')->filter()->values()->all();
+
+        if (empty($ids)) {
+            return;
+        }
+
+        $manualImages = DB::table('product_images')
+            ->whereIn('product_id', $ids)
+            ->where('is_primary', 1)
+            ->orderByDesc('id')
+            ->get()
+            ->unique('product_id')
+            ->keyBy('product_id');
+
+        foreach ($collection as $product) {
+            $erpImage = $product->web_image;
+            $manualImage = optional($manualImages->get($product->id))->image_name;
+
+            $product->setAttribute('erp_web_image', $erpImage);
+            $product->setAttribute('manual_web_image', $manualImage);
+            $product->setAttribute('effective_web_image', $manualImage ?: $erpImage);
+
+            // Existing React pages already render product.web_image from
+            // /products/<filename>. Replace only the serialized/public value;
+            // products.web_image in MySQL remains the ERP WebImage filename.
+            if ($manualImage) {
+                $product->setAttribute('web_image', $manualImage);
+            }
+        }
+    }
+
     public function index(Request $request)
     {
         $query = Product::with(['brand', 'category', 'subCategory', 'supplier'])
@@ -120,6 +155,8 @@ class ProductController extends Controller
             $request->get('per_page', 20)
         );
 
+        $this->applyManualImageOverrides($products->getCollection());
+
         return response()->json($products);
     }
 
@@ -134,6 +171,8 @@ class ProductController extends Controller
             ->where('deleted', false)
             ->where('live_for_web', 1)
             ->findOrFail($id);
+
+        $this->applyManualImageOverrides(collect([$product]));
 
         return response()->json($product);
     }

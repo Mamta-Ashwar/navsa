@@ -195,16 +195,48 @@
   font-weight: 900;
 } */
 
+.product-image-button.no-image {
+  cursor: default;
+}
+
+.product-image-button.no-image:hover {
+  cursor: default;
+}
+
 .product-no-image {
-  display: grid;
-  place-items: center;
-  gap: 11px;
-  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(420px, 82%);
+  min-height: 300px;
+  padding: 34px;
+  color: #082b53;
+  text-align: center;
   letter-spacing: 0.7px;
 }
 
+.product-no-image-logo {
+  display: block;
+  width: min(230px, 70%);
+  max-height: 90px;
+  margin-bottom: 24px;
+  object-fit: contain;
+  opacity: 0.84;
+}
+
+.product-no-image strong {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+}
+
 .product-no-image span {
-  font-size: 52px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.15px;
 }
 
 .product-barcode-card {

@@ -809,3 +809,55 @@
     font-size: 12px;
   }
 }
+
+/* =========================================================
+   PRODUCT IMAGE PLACEHOLDER
+   Used when web_image is blank OR the image file returns 404.
+   ========================================================= */
+.product-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 210px;
+  padding: 24px;
+  color: #082b53;
+  text-align: center;
+}
+
+.product-image-placeholder.compact {
+  min-height: 170px;
+}
+
+.product-image-placeholder-logo {
+  display: block;
+  width: min(150px, 58%);
+  max-height: 62px;
+  margin-bottom: 18px;
+  object-fit: contain;
+  opacity: 0.82;
+}
+
+.product-image-placeholder strong {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.25px;
+}
+
+.product-image-placeholder span {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.85px;
+}
+
+.qty-large-image .product-image-placeholder {
+  min-height: 100%;
+}
+
+.qty-large-image .product-image-placeholder-logo {
+  width: min(180px, 52%);
+  max-height: 72px;
+}

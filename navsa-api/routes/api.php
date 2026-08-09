@@ -72,6 +72,9 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
     Route::get('/products',                        [AdminController::class, 'products'])->middleware('can:products.view');
     Route::post('/products',                       [AdminController::class, 'createProduct'])->middleware('can:products.create');
     Route::put('/products/{id}',                   [AdminController::class, 'updateProduct'])->middleware('can:products.edit');
+    Route::post('/products/{id}/image',            [AdminController::class, 'uploadProductImage'])->middleware('can:products.edit');
+    Route::patch('/products/{id}/image-selection', [AdminController::class, 'selectProductImage'])->middleware('can:products.edit');
+    Route::delete('/products/{id}/image',          [AdminController::class, 'removeProductImage'])->middleware('can:products.edit');
     Route::patch('/products/{id}/toggle-web',      [AdminController::class, 'toggleWeb'])->middleware('can:products.edit');
     Route::patch('/products/{id}/toggle-offer',    [AdminController::class, 'toggleOffer'])->middleware('can:products.edit');
     Route::patch('/products/{id}/toggle-best-offer',[AdminController::class, 'toggleBestOffer'])->middleware('can:products.edit');

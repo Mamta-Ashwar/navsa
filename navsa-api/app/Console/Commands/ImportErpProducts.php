@@ -81,7 +81,9 @@ class ImportErpProducts extends Command
             $headerMap[$cleanHeader] = $i;
         }
 
-        $codeCol = $headerMap['navsa product code'] ?? $headerMap['reference'] ?? 1;
+        $codeCol       = $headerMap['navsa product code'] ?? $headerMap['reference'] ?? 1;
+        $barcodeEanCol = $headerMap['barcodeean'] ?? $headerMap['barcode_ean'] ?? 7;
+        $liveForWebCol = $headerMap['liveforweb'] ?? $headerMap['live_for_web'] ?? 31;
 
         foreach ($rows as $rowIndex => $row) {
             try {
@@ -91,8 +93,8 @@ class ImportErpProducts extends Command
                 $unitsOf          = trim((string) ($row[3] ?? ''));
                 $innerCase        = $this->toNumberOrNull($row[4] ?? null);
                 $outerCase        = $this->toNumberOrNull($row[5] ?? null);
-                $qtyDesc          = trim((string) ($row[6] ?? ''));
-                $barcodeEan       = trim((string) ($row[7] ?? ''));
+                $qtyDesc          = $this->normalizeQtyDesc($row[6] ?? null);
+                $barcodeEan       = trim((string) ($row[$barcodeEanCol] ?? ''));
                 $barcodeCase      = trim((string) ($row[8] ?? ''));
                 $groupDesc        = trim((string) ($row[9] ?? ''));
                 $vatCode          = trim((string) ($row[10] ?? ''));
@@ -116,7 +118,7 @@ class ImportErpProducts extends Command
                 $webShortDesc     = trim((string) ($row[28] ?? ''));
                 $webLongDesc      = trim((string) ($row[29] ?? ''));
                 $webImage         = trim((string) ($row[30] ?? ''));
-                $liveForWeb       = $row[31] ?? 0;
+                $liveForWeb       = $this->toBoolean01($row[$liveForWebCol] ?? 0);
                 $encoreImage      = trim((string) ($row[32] ?? ''));
 
                 if (empty($description) && empty($navsaProductCode)) {
@@ -125,7 +127,13 @@ class ImportErpProducts extends Command
                     continue;
                 }
 
-                $navsaProductCode = !empty($navsaProductCode) ? $navsaProductCode : 'PROD-' . ($rowIndex + 1);
+                if ($navsaProductCode === '') {
+                    $errors++;
+                    $this->newLine();
+                    $this->error('Row ' . ($rowIndex + 2) . ' skipped: missing Reference / NAVSA Product Code.');
+                    $bar->advance();
+                    continue;
+                }
 
                 $supplierId = !empty($supplierIndex)
                     ? ($suppliers[trim($supplierIndex)] ?? null)
@@ -182,7 +190,7 @@ class ImportErpProducts extends Command
                         'units_of'              => $unitsOf ?: null,
                         'inner_case_quantity'   => $innerCase,
                         'outer_case_quantity'   => $outerCase,
-                        'qty_desc'              => $qtyDesc ?: null,
+                        'qty_desc'              => $qtyDesc,
                         'barcode_ean'           => $barcodeEan ?: null,
                         'barcode_case'          => $barcodeCase ?: null,
                         'group_desc'            => $groupDesc ?: null,
@@ -208,9 +216,13 @@ class ImportErpProducts extends Command
                         'web_short_description' => $webShortDesc ?: null,
                         'web_long_description'  => $webLongDesc ?: null,
                         'web_image'             => $webImage ?: null,
-                        'live_for_web'          => $liveForWeb ? 1 : 0,
+                        'live_for_web'          => $liveForWeb,
                         'encore_image'          => $encoreImage ?: null,
                         'obsolete'              => null,
+
+                        // A product present in the ERP file belongs in the active catalogue.
+                        // Re-importing therefore restores any matching soft-deleted product.
+                        'deleted'               => false,
                     ]
                 );
 
@@ -242,6 +254,37 @@ class ImportErpProducts extends Command
         }
 
         return 0;
+    }
+
+    private function normalizeQtyDesc($value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+
+        if ($raw === '') {
+            return null;
+        }
+
+        return match (strtolower($raw)) {
+            'case'   => 'Case',
+            'layer'  => 'Layer',
+            'pallet' => 'Pallet',
+            default  => $raw,
+        };
+    }
+
+    private function toBoolean01($value): int
+    {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+
+        if (is_numeric($value)) {
+            return ((int) $value) === 1 ? 1 : 0;
+        }
+
+        $normalised = strtolower(trim((string) $value));
+
+        return in_array($normalised, ['1', 'true', 'yes', 'y', 'live'], true) ? 1 : 0;
     }
 
     private function toNumberOrNull($value): ?float
