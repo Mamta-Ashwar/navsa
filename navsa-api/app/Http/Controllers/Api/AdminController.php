@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
@@ -1731,15 +1732,16 @@ class AdminController extends Controller
             $skippedCount  = 0;
             $errorCount    = 0;
             $unknownCodes  = [];
+            $unknownBrands = [];
 
             $suppliers = Supplier::pluck('id', 'id')->toArray();
-            $brands    = Brand::pluck('id', 'brand_name')->toArray();
+            $brandLookupMaps = $this->buildBrandLookupMaps();
 
             $subCategoryMap = [];
             $hasGroupCode = \Illuminate\Support\Facades\Schema::hasColumn('sub_categories', 'group_code');
             $cols = $hasGroupCode ? ['id', 'group_code', 'category_id'] : ['id', 'sub_category_name', 'category_id'];
 
-            foreach (SubCategory::select($cols)->get() as $sc) {
+            foreach (SubCategory::where('status', 1)->select($cols)->get() as $sc) {
                 $keyVal = $hasGroupCode ? $sc->group_code : $sc->sub_category_name;
                 if ($keyVal) {
                     $subCategoryMap[strtoupper($keyVal)] = [
@@ -1945,39 +1947,39 @@ class AdminController extends Controller
                         continue;
                     }
 
-                    $brandName     = trim((string) ($row[$headerMap['brand'] ?? ($headerMap['brand '] ?? null)] ?? ''));
-                    $masterGroup   = trim((string) ($row[$headerMap['master group'] ?? null] ?? ''));
-                    $subCatName    = trim((string) ($row[$headerMap['sub catagories'] ?? ($headerMap['sub categories'] ?? null)] ?? ''));
-
+                    /*
+                     * Category, sub-category and brand are derived ONLY from GroupDesc.
+                     *
+                     * ERP format:
+                     *   FRO11YOU107 YOUNG'S
+                     *   ^^^^^       ^^^^^^^
+                     *   group code  brand text
+                     *
+                     * The first 5 characters map to sub_categories.group_code.
+                     * The text from character 12 onward maps to the pre-loaded brands table.
+                     * We intentionally do NOT trust the Step 1 "Master Group", "Sub Catagories"
+                     * or "Brand" columns because those example workbooks contain stale VLOOKUP data.
+                     */
+                    $brandName     = '';
+                    $groupCode     = '';
                     $categoryId    = null;
                     $subCategoryId = null;
                     $storageType   = 'Ambient';
 
-                    if (!empty($masterGroup)) {
-                        $catObj = Category::firstOrCreate(['category_name' => $masterGroup], ['status' => 1]);
-                        $categoryId = $catObj->id;
-                    }
+                    if (!empty($groupDesc)) {
+                        $cleanGroup = preg_replace('/\s+/u', ' ', trim($groupDesc));
+                        $groupCode  = strtoupper(substr($cleanGroup, 0, 5));
 
-                    if (!empty($subCatName) && $categoryId) {
-                        $createAttrs = ['status' => 1];
-                        if (\Illuminate\Support\Facades\Schema::hasColumn('sub_categories', 'group_code')) {
-                            $createAttrs['group_code'] = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $subCatName), 0, 5));
+                        // GroupDesc is 5-char group code + 6-char brand code + space + brand text.
+                        if (strlen($cleanGroup) > 11) {
+                            $brandName = trim(substr($cleanGroup, 11));
                         }
-                        $subCatObj = SubCategory::firstOrCreate(
-                            ['sub_category_name' => $subCatName, 'category_id' => $categoryId],
-                            $createAttrs
-                        );
-                        $subCategoryId = $subCatObj->id;
-                    }
 
-                    if (empty($categoryId) && !empty($groupDesc)) {
-                        $cleanGroup = preg_replace('/\s+/', ' ', trim($groupDesc));
-
-                        if (empty($brandName) && preg_match('/^\S+\s+(.+)$/', $cleanGroup, $matches)) {
+                        // Fallback for any unusual ERP row that still follows "code text".
+                        if ($brandName === '' && preg_match('/^\S+\s+(.+)$/u', $cleanGroup, $matches)) {
                             $brandName = trim($matches[1]);
                         }
 
-                        $groupCode = strtoupper(substr($cleanGroup, 0, 5));
                         $storageType = $storageMap[$groupCode] ?? 'Ambient';
 
                         if (isset($subCategoryMap[$groupCode])) {
@@ -1988,16 +1990,9 @@ class AdminController extends Controller
                         }
                     }
 
-                    $brandId = null;
-                    if (!empty($brandName)) {
-                        if (!isset($brands[$brandName])) {
-                            $brand = Brand::firstOrCreate(
-                                ['brand_name' => $brandName],
-                                ['status' => 1]
-                            );
-                            $brands[$brandName] = $brand->id;
-                        }
-                        $brandId = $brands[$brandName];
+                    $brandId = $this->resolveBrandId($brandName, $brandLookupMaps);
+                    if ($brandName !== '' && $brandId === null) {
+                        $unknownBrands[$brandName] = ($unknownBrands[$brandName] ?? 0) + 1;
                     }
 
                     $matchKey = !empty($navsaProductCode)
@@ -2006,6 +2001,23 @@ class AdminController extends Controller
 
                     $existing = Product::where($matchKey)->first();
                     $wasDeleted = $existing && (bool) $existing->deleted;
+
+                    // Never erase a known relationship because of one malformed/unmapped ERP row.
+                    // Known official mappings still overwrite the old values normally.
+                    if ($existing) {
+                        if ($categoryId === null) {
+                            $categoryId = $existing->category_id;
+                        }
+                        if ($subCategoryId === null) {
+                            $subCategoryId = $existing->sub_category_id;
+                        }
+                        if ($brandId === null) {
+                            $brandId = $existing->brand_id;
+                        }
+                        if ($groupCode !== '' && !isset($storageMap[$groupCode]) && !empty($existing->storage_type)) {
+                            $storageType = $existing->storage_type;
+                        }
+                    }
 
                     $payload = [
                         'navsa_product_code'    => $navsaProductCode,
@@ -2085,7 +2097,8 @@ class AdminController extends Controller
                 'restored' => $restoredCount,
                 'skipped' => $skippedCount,
                 'errors' => $errorCount,
-                'unknown_group_codes' => $unknownCodes
+                'unknown_group_codes' => $unknownCodes,
+                'unknown_brands' => $unknownBrands
             ]);
 
         } catch (\Exception $e) {
@@ -2095,6 +2108,104 @@ class AdminController extends Controller
                 @unlink($tempFilePath);
             }
         }
+    }
+
+
+    /**
+     * Build lookup maps against the pre-loaded official brands table.
+     *
+     * Exact matches are preferred. A conservative normalised fallback is used only
+     * when that normalised form identifies exactly one brand. Explicit GroupDesc
+     * aliases (for example JACK -> JACK LINKS) are stored in brand_aliases.
+     */
+    private function buildBrandLookupMaps(): array
+    {
+        $exact = [];
+        $normalisedBuckets = [];
+
+        foreach (Brand::where('deleted', false)->where('status', 1)->select('id', 'brand_name')->get() as $brand) {
+            $name = trim((string) $brand->brand_name);
+            if ($name === '') {
+                continue;
+            }
+
+            $exact[Str::lower($name)] = (int) $brand->id;
+
+            $normalised = $this->normaliseBrandLookupKey($name);
+            if ($normalised !== '') {
+                $normalisedBuckets[$normalised] ??= [];
+                $normalisedBuckets[$normalised][(int) $brand->id] = true;
+            }
+        }
+
+        $normalisedUnique = [];
+        foreach ($normalisedBuckets as $key => $ids) {
+            if (count($ids) === 1) {
+                $normalisedUnique[$key] = (int) array_key_first($ids);
+            }
+        }
+
+        $aliases = [];
+        if (
+            \Illuminate\Support\Facades\Schema::hasTable('brand_aliases')
+            && \Illuminate\Support\Facades\Schema::hasColumn('brand_aliases', 'alias_name')
+            && \Illuminate\Support\Facades\Schema::hasColumn('brand_aliases', 'brand_id')
+        ) {
+            $rows = DB::table('brand_aliases')
+                ->join('brands', 'brands.id', '=', 'brand_aliases.brand_id')
+                ->where('brands.deleted', false)
+                ->where('brands.status', 1)
+                ->select('brand_aliases.alias_name', 'brand_aliases.brand_id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $key = $this->normaliseBrandLookupKey($row->alias_name);
+                if ($key !== '') {
+                    $aliases[$key] = (int) $row->brand_id;
+                }
+            }
+        }
+
+        return [
+            'exact' => $exact,
+            'normalised' => $normalisedUnique,
+            'aliases' => $aliases,
+        ];
+    }
+
+    private function resolveBrandId(?string $rawBrandName, array $maps): ?int
+    {
+        $name = trim((string) $rawBrandName);
+        if ($name === '') {
+            return null;
+        }
+
+        $normalised = $this->normaliseBrandLookupKey($name);
+
+        // Explicit aliases take priority over generic matching.
+        if ($normalised !== '' && isset($maps['aliases'][$normalised])) {
+            return (int) $maps['aliases'][$normalised];
+        }
+
+        $exactKey = Str::lower($name);
+        if (isset($maps['exact'][$exactKey])) {
+            return (int) $maps['exact'][$exactKey];
+        }
+
+        if ($normalised !== '' && isset($maps['normalised'][$normalised])) {
+            return (int) $maps['normalised'][$normalised];
+        }
+
+        return null;
+    }
+
+    private function normaliseBrandLookupKey(?string $value): string
+    {
+        $value = Str::ascii((string) ($value ?? ''));
+        $value = strtoupper(trim($value));
+        $value = str_replace('&', ' AND ', $value);
+        $value = preg_replace('/[^A-Z0-9]+/', ' ', $value);
+        return trim(preg_replace('/\s+/', ' ', (string) $value));
     }
 
     private function normalizeQtyDesc($value): ?string

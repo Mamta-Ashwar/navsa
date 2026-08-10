@@ -10,6 +10,7 @@ use App\Models\Supplier;
 use App\Models\Brand;
 use App\Models\SubCategory;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ImportErpProducts extends Command
 {
@@ -48,13 +49,14 @@ class ImportErpProducts extends Command
         $skipped  = 0;
         $errors   = 0;
         $unknownCodes = [];
+        $unknownBrands = [];
 
         $suppliers = Supplier::pluck('id', 'supplier_index')->toArray();
-        $brands    = Brand::pluck('id', 'brand_name')->toArray();
+        $brandLookupMaps = $this->buildBrandLookupMaps();
 
         // Single source of truth: group_code => [category_id, sub_category_id]
         $subCategoryMap = [];
-        foreach (SubCategory::select('id', 'group_code', 'category_id')->get() as $sc) {
+        foreach (SubCategory::where('status', 1)->select('id', 'group_code', 'category_id')->get() as $sc) {
             $subCategoryMap[strtoupper($sc->group_code)] = [
                 'category_id'     => $sc->category_id,
                 'sub_category_id' => $sc->id,
@@ -139,19 +141,24 @@ class ImportErpProducts extends Command
                     ? ($suppliers[trim($supplierIndex)] ?? null)
                     : null;
 
-                $brandName     = null;
+                $brandName     = '';
+                $groupCode     = '';
                 $categoryId    = null;
                 $subCategoryId = null;
                 $storageType   = 'Ambient';
 
                 if (!empty($groupDesc)) {
-                    $cleanGroup = preg_replace('/\s+/', ' ', trim($groupDesc));
+                    $cleanGroup = preg_replace('/\s+/u', ' ', trim($groupDesc));
+                    $groupCode  = strtoupper(substr($cleanGroup, 0, 5));
 
-                    if (preg_match('/^\S+\s+(.+)$/', $cleanGroup, $matches)) {
+                    if (strlen($cleanGroup) > 11) {
+                        $brandName = trim(substr($cleanGroup, 11));
+                    }
+
+                    if ($brandName === '' && preg_match('/^\S+\s+(.+)$/u', $cleanGroup, $matches)) {
                         $brandName = trim($matches[1]);
                     }
 
-                    $groupCode = strtoupper(substr($cleanGroup, 0, 5));
                     $storageType = $storageMap[$groupCode] ?? 'Ambient';
 
                     if (isset($subCategoryMap[$groupCode])) {
@@ -162,21 +169,31 @@ class ImportErpProducts extends Command
                     }
                 }
 
-                $brandId = null;
-                if (!empty($brandName)) {
-                    if (!isset($brands[$brandName])) {
-                        $brand = Brand::firstOrCreate(
-                            ['brand_name' => $brandName],
-                            ['status' => 1]
-                        );
-                        $brands[$brandName] = $brand->id;
-                    }
-                    $brandId = $brands[$brandName];
+                $brandId = $this->resolveBrandId($brandName, $brandLookupMaps);
+                if ($brandName !== '' && $brandId === null) {
+                    $unknownBrands[$brandName] = ($unknownBrands[$brandName] ?? 0) + 1;
                 }
 
                 $matchKey = !empty($navsaProductCode)
                     ? ['navsa_product_code' => $navsaProductCode]
                     : ['description' => $description];
+
+                $existing = Product::where($matchKey)->first();
+
+                if ($existing) {
+                    if ($categoryId === null) {
+                        $categoryId = $existing->category_id;
+                    }
+                    if ($subCategoryId === null) {
+                        $subCategoryId = $existing->sub_category_id;
+                    }
+                    if ($brandId === null) {
+                        $brandId = $existing->brand_id;
+                    }
+                    if ($groupCode !== '' && !isset($storageMap[$groupCode]) && !empty($existing->storage_type)) {
+                        $storageType = $existing->storage_type;
+                    }
+                }
 
                 Product::updateOrCreate(
                     $matchKey,
@@ -246,14 +263,113 @@ class ImportErpProducts extends Command
 
         if (!empty($unknownCodes)) {
             $this->newLine();
-            $this->warn("⚠️  Unrecognized group codes (no matching sub_category — category left NULL for these products):");
+            $this->warn("⚠️  Unrecognized group codes (no active sub_category mapping found):");
             foreach ($unknownCodes as $code => $count) {
                 $this->line("  {$code} — {$count} product(s)");
             }
-            $this->warn("Add these codes to the sub_categories table, then re-run this import to backfill them.");
+            $this->warn("Update the official sub_categories mapping, then re-run this import.");
+        }
+
+        if (!empty($unknownBrands)) {
+            $this->newLine();
+            $this->warn("⚠️  Unrecognized GroupDesc brand names (no official brand / alias match found):");
+            foreach ($unknownBrands as $name => $count) {
+                $this->line("  {$name} — {$count} product(s)");
+            }
+            $this->warn("Add an explicit brand_aliases row if the ERP uses a shortened/alternate name.");
         }
 
         return 0;
+    }
+
+
+    private function buildBrandLookupMaps(): array
+    {
+        $exact = [];
+        $normalisedBuckets = [];
+
+        foreach (Brand::where('deleted', false)->where('status', 1)->select('id', 'brand_name')->get() as $brand) {
+            $name = trim((string) $brand->brand_name);
+            if ($name === '') {
+                continue;
+            }
+
+            $exact[Str::lower($name)] = (int) $brand->id;
+
+            $normalised = $this->normaliseBrandLookupKey($name);
+            if ($normalised !== '') {
+                $normalisedBuckets[$normalised] ??= [];
+                $normalisedBuckets[$normalised][(int) $brand->id] = true;
+            }
+        }
+
+        $normalisedUnique = [];
+        foreach ($normalisedBuckets as $key => $ids) {
+            if (count($ids) === 1) {
+                $normalisedUnique[$key] = (int) array_key_first($ids);
+            }
+        }
+
+        $aliases = [];
+        if (
+            \Illuminate\Support\Facades\Schema::hasTable('brand_aliases')
+            && \Illuminate\Support\Facades\Schema::hasColumn('brand_aliases', 'alias_name')
+            && \Illuminate\Support\Facades\Schema::hasColumn('brand_aliases', 'brand_id')
+        ) {
+            $rows = DB::table('brand_aliases')
+                ->join('brands', 'brands.id', '=', 'brand_aliases.brand_id')
+                ->where('brands.deleted', false)
+                ->where('brands.status', 1)
+                ->select('brand_aliases.alias_name', 'brand_aliases.brand_id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $key = $this->normaliseBrandLookupKey($row->alias_name);
+                if ($key !== '') {
+                    $aliases[$key] = (int) $row->brand_id;
+                }
+            }
+        }
+
+        return [
+            'exact' => $exact,
+            'normalised' => $normalisedUnique,
+            'aliases' => $aliases,
+        ];
+    }
+
+    private function resolveBrandId(?string $rawBrandName, array $maps): ?int
+    {
+        $name = trim((string) $rawBrandName);
+        if ($name === '') {
+            return null;
+        }
+
+        $normalised = $this->normaliseBrandLookupKey($name);
+
+        if ($normalised !== '' && isset($maps['aliases'][$normalised])) {
+            return (int) $maps['aliases'][$normalised];
+        }
+
+        $exactKey = Str::lower($name);
+        if (isset($maps['exact'][$exactKey])) {
+            return (int) $maps['exact'][$exactKey];
+        }
+
+        if ($normalised !== '' && isset($maps['normalised'][$normalised])) {
+            return (int) $maps['normalised'][$normalised];
+        }
+
+        return null;
+    }
+
+    private function normaliseBrandLookupKey(?string $value): string
+    {
+        $value = Str::ascii((string) ($value ?? ''));
+        $value = strtoupper(trim($value));
+        $value = str_replace('&', ' AND ', $value);
+        $value = preg_replace('/[^A-Z0-9]+/', ' ', $value);
+        return trim(preg_replace('/\s+/', ' ', (string) $value));
     }
 
     private function normalizeQtyDesc($value): ?string
