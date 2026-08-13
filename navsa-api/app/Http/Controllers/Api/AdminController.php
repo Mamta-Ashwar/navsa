@@ -296,6 +296,212 @@ class AdminController extends Controller
         return $paginator;
     }
 
+    private function validateBulkProductSelection(Request $request): array
+    {
+        return $request->validate([
+            'selection' => 'required|in:ids,matching',
+            'ids' => 'required_if:selection,ids|array|min:1',
+            'ids.*' => 'integer|distinct',
+            'exclude_ids' => 'nullable|array',
+            'exclude_ids.*' => 'integer|distinct',
+            'filters' => 'nullable|array',
+            'filters.search' => 'nullable|string|max:255',
+            'filters.brand_id' => 'nullable|integer',
+            'filters.category_id' => 'nullable|integer',
+            'filters.is_offer' => 'nullable|in:0,1',
+            'filters.live_for_web' => 'nullable|in:0,1',
+            'filters.low_stock' => 'nullable|in:0,1',
+        ]);
+    }
+
+    private function bulkProductSelectionQuery(array $validated, bool $deleted)
+    {
+        $query = Product::query()->where('deleted', $deleted);
+
+        if ($validated['selection'] === 'ids') {
+            return $query->whereIn('id', array_map('intval', $validated['ids'] ?? []));
+        }
+
+        $filters = $validated['filters'] ?? [];
+
+        if (!empty($filters['search'])) {
+            $search = trim((string) $filters['search']);
+            $query->where(function ($sub) use ($search) {
+                $sub->where('description', 'like', '%' . $search . '%')
+                    ->orWhere('navsa_product_code', 'like', '%' . $search . '%')
+                    ->orWhere('barcode_ean', 'like', '%' . $search . '%');
+            });
+        }
+
+        if (array_key_exists('brand_id', $filters) && $filters['brand_id'] !== null && $filters['brand_id'] !== '') {
+            $query->where('brand_id', $filters['brand_id']);
+        }
+
+        if (array_key_exists('category_id', $filters) && $filters['category_id'] !== null && $filters['category_id'] !== '') {
+            $query->where('category_id', $filters['category_id']);
+        }
+
+        if (array_key_exists('is_offer', $filters) && $filters['is_offer'] !== null && $filters['is_offer'] !== '') {
+            $query->where('is_offer', $filters['is_offer']);
+        }
+
+        if (array_key_exists('live_for_web', $filters) && $filters['live_for_web'] !== null && $filters['live_for_web'] !== '') {
+            $query->where('live_for_web', $filters['live_for_web']);
+        }
+
+        if (!empty($filters['low_stock'])) {
+            $query->where('stock_quantity', '<=', 5);
+        }
+
+        if (!empty($validated['exclude_ids'])) {
+            $query->whereNotIn('id', array_map('intval', $validated['exclude_ids']));
+        }
+
+        return $query;
+    }
+
+    public function bulkHideProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkProductSelection($request);
+        $query = $this->bulkProductSelectionQuery($validated, false);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No active products matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update(['live_for_web' => 0]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'hidden' => true,
+            'message' => $selectedCount . ' product(s) hidden from the website.',
+        ]);
+    }
+
+    public function bulkShowProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkProductSelection($request);
+        $query = $this->bulkProductSelectionQuery($validated, false);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No active products matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update(['live_for_web' => 1]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'hidden' => false,
+            'message' => $selectedCount . ' product(s) made live on the website.',
+        ]);
+    }
+
+    public function bulkSoftDeleteProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkProductSelection($request);
+        $query = $this->bulkProductSelectionQuery($validated, false);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No active products matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update([
+            'deleted' => true,
+            'live_for_web' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'deleted' => true,
+            'permanent' => false,
+            'message' => $selectedCount . ' product(s) moved to Deleted Items.',
+        ]);
+    }
+
+    public function bulkRestoreProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkProductSelection($request);
+        $query = $this->bulkProductSelectionQuery($validated, true);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No deleted products matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update([
+            'deleted' => false,
+            'live_for_web' => 1,
+        ]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'deleted' => false,
+            'live_for_web' => 1,
+            'message' => $selectedCount . ' product(s) restored and made live on the website.',
+        ]);
+    }
+
+    public function bulkHardDeleteProducts(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkProductSelection($request);
+        $query = $this->bulkProductSelectionQuery($validated, true);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No deleted products matched the selected bulk action.',
+            ], 422);
+        }
+
+        $selectedIdsSubquery = (clone $query)->select('id');
+        $blockedByOrders = DB::table('order_items')
+            ->whereIn('product_id', $selectedIdsSubquery)
+            ->distinct()
+            ->count('product_id');
+
+        if ($blockedByOrders > 0) {
+            return response()->json([
+                'message' => $blockedByOrders . ' selected product(s) are already used in orders and cannot be permanently deleted. No products were deleted.',
+                'blocked_count' => $blockedByOrders,
+            ], 422);
+        }
+
+        DB::transaction(function () use ($query) {
+            DB::table('product_images')
+                ->whereIn('product_id', (clone $query)->select('id'))
+                ->delete();
+
+            (clone $query)->delete();
+        });
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'destroyed' => true,
+            'message' => $selectedCount . ' product(s) permanently deleted.',
+        ]);
+    }
+
     public function uploadProductImage(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();

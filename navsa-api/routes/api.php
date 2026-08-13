@@ -71,6 +71,11 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
     Route::post('/import-erp',                     [AdminController::class, 'importErpProducts'])->middleware('can:products.import-erp');
     Route::get('/products',                        [AdminController::class, 'products'])->middleware('can:products.view');
     Route::post('/products',                       [AdminController::class, 'createProduct'])->middleware('can:products.create');
+    Route::patch('/products/bulk-hide',             [AdminController::class, 'bulkHideProducts'])->middleware('can:products.edit');
+    Route::patch('/products/bulk-show',             [AdminController::class, 'bulkShowProducts'])->middleware('can:products.edit');
+    Route::patch('/products/bulk-soft-delete',      [AdminController::class, 'bulkSoftDeleteProducts'])->middleware('can:products.delete');
+    Route::patch('/products/bulk-restore',          [AdminController::class, 'bulkRestoreProducts'])->middleware('can:products.delete');
+    Route::delete('/products/bulk-hard-delete',     [AdminController::class, 'bulkHardDeleteProducts'])->middleware('can:products.delete');
     Route::put('/products/{id}',                   [AdminController::class, 'updateProduct'])->middleware('can:products.edit');
     Route::post('/products/{id}/image',            [AdminController::class, 'uploadProductImage'])->middleware('can:products.edit');
     Route::patch('/products/{id}/image-selection', [AdminController::class, 'selectProductImage'])->middleware('can:products.edit');

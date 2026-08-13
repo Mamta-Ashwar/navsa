@@ -366,7 +366,7 @@ export default function HeaderMain() {
             className="header-main__account-button"
           >
             <FaUser />
-            <span>Login</span>
+            <span>Customer Login</span>
           </Link>
 
           <img
