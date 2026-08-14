@@ -11,6 +11,7 @@ import {
 } from '../services/shippingService'
 import NoticeModal from '../components/NoticeModal'
 import { getProductImageUrl } from '../utils/imageHelper'
+import { getOrderQuantityPermissions } from '../utils/orderQuantity'
 import './ProductDetail.css'
 
 function hasValidEanChecksum(digits) {
@@ -331,10 +332,11 @@ export default function ProductDetail() {
       1
   )
 
-  const qtyRule = String(product?.order_qty_allowed || product?.qty_desc || 'DEFAULT').trim().toLowerCase()
-  const isCaseAllowed = qtyRule === 'case'
-  const isLayerAllowed = qtyRule !== 'pallet'
-  const isPalletAllowed = true
+  const {
+    caseAllowed: isCaseAllowed,
+    layerAllowed: isLayerAllowed,
+    palletAllowed: isPalletAllowed,
+  } = getOrderQuantityPermissions(product?.order_qty_allowed)
 
   const totalCases =
     Number(caseQty || 0) +

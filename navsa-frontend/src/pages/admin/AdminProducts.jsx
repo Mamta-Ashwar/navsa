@@ -58,6 +58,7 @@ const BLANK_PRODUCT = {
   navsa_product_code: '',
   barcode_ean: '',
   price: '',
+  order_qty_allowed: 'DEFAULT',
   live_for_web: 1,
   stock_quantity: 0,
   brand_id: null,
@@ -1257,9 +1258,9 @@ function ErpImportModal({ onClose, onImportDone, mode = 'erp' }) {
 
   const isStep1 = mode === 'step1'
   const modalTitle = isStep1 ? 'Step 1 Converted Excel Import' : 'Bulk ERP Excel Import'
-  const modalSubtitle = isStep1 
-    ? 'Upload converted website data file (Step 1 - Converted file from ERP to Website Data.xlsx)'
-    : 'Upload your ERP system file (e.g. Datafeed from ERP system.xlsx)'
+  const modalSubtitle = isStep1
+    ? 'Upload Step 1 data. A minimal file may contain only NAVSA Product Code/Reference, Description and ORDER QTY ALLOWED.'
+    : 'Upload your ERP system file. If ORDER QTY ALLOWED is included, blank = DEFAULT; PALLET and CASE are applied per NAVSA Product Code.'
   const accentGradient = isStep1 ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'linear-gradient(135deg,#10b981,#059669)'
   const accentColor = isStep1 ? '#3b82f6' : '#10b981'
 

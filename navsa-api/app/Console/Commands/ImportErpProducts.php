@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 class ImportErpProducts extends Command
 {
-    protected $signature = 'erp:import {file}';
+    protected $signature = 'erp:import {file} {--mode=auto : auto, erp or step1}';
     protected $description = 'Import products from ERP Excel file';
 
     public function handle()
@@ -83,9 +83,129 @@ class ImportErpProducts extends Command
             $headerMap[$cleanHeader] = $i;
         }
 
-        $codeCol       = $headerMap['navsa product code'] ?? $headerMap['reference'] ?? 1;
+        $codeCol = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? null);
+        $descriptionCol = $headerMap['description'] ?? null;
+        $orderQtyAllowedCol =
+            $headerMap['order qty allowed']
+            ?? ($headerMap['orderqtyallowed'] ?? null);
+
         $barcodeEanCol = $headerMap['barcodeean'] ?? $headerMap['barcode_ean'] ?? 7;
         $liveForWebCol = $headerMap['liveforweb'] ?? $headerMap['live_for_web'] ?? 31;
+
+        if ($codeCol === null) {
+            $bar->finish();
+            $this->newLine(2);
+            $this->error('Import requires a NAVSA Product Code or Reference column.');
+            return 1;
+        }
+
+        $requestedMode = strtolower(trim((string) $this->option('mode')));
+        if (!in_array($requestedMode, ['auto', 'erp', 'step1'], true)) {
+            $bar->finish();
+            $this->newLine(2);
+            $this->error('Invalid --mode. Use auto, erp or step1.');
+            return 1;
+        }
+
+        $looksLikeStep1 =
+            isset($headerMap['navsa product code'])
+            && $orderQtyAllowedCol !== null
+            && !isset($headerMap['primarysupplierindex']);
+
+        $isStep1 = $requestedMode === 'step1'
+            || ($requestedMode === 'auto' && $looksLikeStep1);
+
+        if ($isStep1) {
+            if ($orderQtyAllowedCol === null) {
+                $bar->finish();
+                $this->newLine(2);
+                $this->error('Step 1 import requires an ORDER QTY ALLOWED column.');
+                return 1;
+            }
+
+            foreach ($rows as $rowIndex => $row) {
+                try {
+                    $navsaProductCode = trim((string) ($row[$codeCol] ?? ''));
+                    $description = $descriptionCol !== null
+                        ? trim((string) ($row[$descriptionCol] ?? ''))
+                        : '';
+
+                    if ($navsaProductCode === '' && $description === '') {
+                        $skipped++;
+                        $bar->advance();
+                        continue;
+                    }
+
+                    if ($navsaProductCode === '') {
+                        $errors++;
+                        $this->newLine();
+                        $this->error(
+                            'Row ' . ($rowIndex + 2)
+                            . ' skipped: missing NAVSA Product Code / Reference.'
+                        );
+                        $bar->advance();
+                        continue;
+                    }
+
+                    $product = Product::where('navsa_product_code', $navsaProductCode)->first();
+
+                    if (!$product) {
+                        $errors++;
+                        $this->newLine();
+                        $this->error(
+                            'Row ' . ($rowIndex + 2)
+                            . " skipped: NAVSA Product Code {$navsaProductCode} does not exist."
+                        );
+                        $bar->advance();
+                        continue;
+                    }
+
+                    $orderQtyAllowed = $this->normalizeOrderQtyAllowed(
+                        $row[$orderQtyAllowedCol] ?? null
+                    );
+
+                    if ($orderQtyAllowed === null) {
+                        $errors++;
+                        $this->newLine();
+                        $this->error(
+                            'Row ' . ($rowIndex + 2)
+                            . ' skipped: invalid ORDER QTY ALLOWED. Use blank, DEFAULT, PALLET or CASE.'
+                        );
+                        $bar->advance();
+                        continue;
+                    }
+
+                    $updates = [
+                        'order_qty_allowed' => $orderQtyAllowed,
+                        'deleted' => false,
+                    ];
+
+                    if ($description !== '') {
+                        $updates['description'] = $description;
+                    }
+
+                    $product->update($updates);
+                    $imported++;
+                } catch (\Exception $e) {
+                    $errors++;
+                    $this->newLine();
+                    $this->error(
+                        "Step 1 row error at index {$rowIndex}: " . $e->getMessage()
+                    );
+                }
+
+                $bar->advance();
+            }
+
+            $bar->finish();
+            $this->newLine(2);
+            $this->info("✅ Step 1 ORDER QTY ALLOWED import complete!");
+            $this->info("Updated  : {$imported}");
+            $this->info("Skipped  : {$skipped}");
+            $this->info("Errors   : {$errors}");
+
+            return $errors > 0 ? 1 : 0;
+        }
 
         foreach ($rows as $rowIndex => $row) {
             try {
@@ -96,6 +216,23 @@ class ImportErpProducts extends Command
                 $innerCase        = $this->toNumberOrNull($row[4] ?? null);
                 $outerCase        = $this->toNumberOrNull($row[5] ?? null);
                 $qtyDesc          = $this->normalizeQtyDesc($row[6] ?? null);
+                $orderQtyAllowed  = null;
+                if ($orderQtyAllowedCol !== null) {
+                    $orderQtyAllowed = $this->normalizeOrderQtyAllowed(
+                        $row[$orderQtyAllowedCol] ?? null
+                    );
+
+                    if ($orderQtyAllowed === null) {
+                        $errors++;
+                        $this->newLine();
+                        $this->error(
+                            'Row ' . ($rowIndex + 2)
+                            . ' skipped: invalid ORDER QTY ALLOWED. Use blank, DEFAULT, PALLET or CASE.'
+                        );
+                        $bar->advance();
+                        continue;
+                    }
+                }
                 $barcodeEan       = trim((string) ($row[$barcodeEanCol] ?? ''));
                 $barcodeCase      = trim((string) ($row[8] ?? ''));
                 $groupDesc        = trim((string) ($row[9] ?? ''));
@@ -195,53 +332,59 @@ class ImportErpProducts extends Command
                     }
                 }
 
-                Product::updateOrCreate(
-                    $matchKey,
-                    [
-                        'navsa_product_code'    => $navsaProductCode,
-                        'supplier_id'           => $supplierId,
-                        'category_id'           => $categoryId,
-                        'sub_category_id'       => $subCategoryId,
-                        'brand_id'              => $brandId,
-                        'description'           => $description,
-                        'units_of'              => $unitsOf ?: null,
-                        'inner_case_quantity'   => $innerCase,
-                        'outer_case_quantity'   => $outerCase,
-                        'qty_desc'              => $qtyDesc,
-                        'barcode_ean'           => $barcodeEan ?: null,
-                        'barcode_case'          => $barcodeCase ?: null,
-                        'group_desc'            => $groupDesc ?: null,
-                        'storage_type'          => $storageType,
-                        'vat_code'              => $vatCode ?: null,
-                        'layer_quantity'        => $layerQty,
-                        'pallet_quantity'       => $palletQty,
-                        'supplier_reference'    => $supplierRef ?: null,
-                        'cost'                  => $cost,
-                        'cost_from_date'        => $costFromDate,
-                        'cost_to_date'          => $costToDate,
-                        'weight'                => $weight,
-                        'volume'                => $volume,
-                        'shelf_life'            => $shelfLife,
-                        'bbd'                   => $bbd,
-                        'price_list'            => $priceList ?: null,
-                        'price'                 => $price,
-                        'from_date'             => $fromDate,
-                        'to_date'               => $toDate,
-                        'comm_code'             => $commCode ?: null,
-                        'intra_country'         => $intraCountry ?: null,
-                        'intra_type'            => $intraType ?: null,
-                        'web_short_description' => $webShortDesc ?: null,
-                        'web_long_description'  => $webLongDesc ?: null,
-                        'web_image'             => $webImage ?: null,
-                        'live_for_web'          => $liveForWeb,
-                        'encore_image'          => $encoreImage ?: null,
-                        'obsolete'              => null,
+                $payload = [
+                    'navsa_product_code'    => $navsaProductCode,
+                    'supplier_id'           => $supplierId,
+                    'category_id'           => $categoryId,
+                    'sub_category_id'       => $subCategoryId,
+                    'brand_id'              => $brandId,
+                    'description'           => $description,
+                    'units_of'              => $unitsOf ?: null,
+                    'inner_case_quantity'   => $innerCase,
+                    'outer_case_quantity'   => $outerCase,
+                    'qty_desc'              => $qtyDesc,
+                    'barcode_ean'           => $barcodeEan ?: null,
+                    'barcode_case'          => $barcodeCase ?: null,
+                    'group_desc'            => $groupDesc ?: null,
+                    'storage_type'          => $storageType,
+                    'vat_code'              => $vatCode ?: null,
+                    'layer_quantity'        => $layerQty,
+                    'pallet_quantity'       => $palletQty,
+                    'supplier_reference'    => $supplierRef ?: null,
+                    'cost'                  => $cost,
+                    'cost_from_date'        => $costFromDate,
+                    'cost_to_date'          => $costToDate,
+                    'weight'                => $weight,
+                    'volume'                => $volume,
+                    'shelf_life'            => $shelfLife,
+                    'bbd'                   => $bbd,
+                    'price_list'            => $priceList ?: null,
+                    'price'                 => $price,
+                    'from_date'             => $fromDate,
+                    'to_date'               => $toDate,
+                    'comm_code'             => $commCode ?: null,
+                    'intra_country'         => $intraCountry ?: null,
+                    'intra_type'            => $intraType ?: null,
+                    'web_short_description' => $webShortDesc ?: null,
+                    'web_long_description'  => $webLongDesc ?: null,
+                    'web_image'             => $webImage ?: null,
+                    'live_for_web'          => $liveForWeb,
+                    'encore_image'          => $encoreImage ?: null,
+                    'obsolete'              => null,
 
-                        // A product present in the ERP file belongs in the active catalogue.
-                        // Re-importing therefore restores any matching soft-deleted product.
-                        'deleted'               => false,
-                    ]
-                );
+                    // A product present in the ERP file belongs in the active catalogue.
+                    // Re-importing therefore restores any matching soft-deleted product.
+                    'deleted'               => false,
+                ];
+
+                // ORDER QTY ALLOWED is independent from QtyDesc.
+                // If the ERP workbook does not contain the column, preserve the
+                // existing database value (new products use the DB DEFAULT).
+                if ($orderQtyAllowedCol !== null) {
+                    $payload['order_qty_allowed'] = $orderQtyAllowed;
+                }
+
+                Product::updateOrCreate($matchKey, $payload);
 
                 $imported++;
 
@@ -386,6 +529,19 @@ class ImportErpProducts extends Command
             'pallet' => 'Pallet',
             default  => $raw,
         };
+    }
+
+    private function normalizeOrderQtyAllowed($value): ?string
+    {
+        $raw = strtoupper(trim((string) ($value ?? '')));
+
+        if ($raw === '') {
+            return 'DEFAULT';
+        }
+
+        return in_array($raw, ['DEFAULT', 'PALLET', 'CASE'], true)
+            ? $raw
+            : null;
     }
 
     private function toBoolean01($value): int

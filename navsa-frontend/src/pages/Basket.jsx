@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useShipping } from '../context/ShippingContext'
 import { useCurrency } from '../utils/currency'
 import ConfirmModal from '../components/common/ConfirmModal'
+import ShippingSelector from '../components/ShippingSelector'
+import { getCountries } from '../services/shippingService'
+import { getOrderQuantityPermissions } from '../utils/orderQuantity'
 import './Basket.css'
 
 function kg(value) {
@@ -26,6 +29,8 @@ function ft3(value) {
 
 function Basket() {
   const [itemToRemove, setItemToRemove] = useState(null)
+  const [showShippingEditor, setShowShippingEditor] = useState(false)
+  const [resolvedCountry, setResolvedCountry] = useState(null)
   const { formatPrice: money } = useCurrency()
 
   const {
@@ -47,6 +52,7 @@ function Basket() {
   const selectedContainer = shipping?.container
   const selectedCountry = shipping?.country
   const selectedPort = shipping?.port
+  const effectiveCountry = resolvedCountry || selectedCountry
 
   const hasAmbient = basketItems.some(item => (item.storage_type || 'Ambient') === 'Ambient')
   const hasChilled = basketItems.some(item => (item.storage_type || 'Ambient') === 'Chilled')
@@ -64,8 +70,26 @@ function Basket() {
     hasFrozen &&
     (hasAmbient || hasChilled)
 
-  const minimumOrder = isCollection || selectedCountry?.zone_id === 1 ? 5000 : 10000
-  const zoneLabel = isCollection || selectedCountry?.zone_id === 1 ? 'Collection (EXW)' : 'Rest of World'
+  const selectedZoneId = Number(effectiveCountry?.zone_id || 0)
+  const databaseMinimumOrder = Number(effectiveCountry?.minimum_order || 0)
+
+  const minimumOrder = isCollection
+    ? 5000
+    : databaseMinimumOrder > 0
+      ? databaseMinimumOrder
+      : selectedZoneId === 1 || selectedZoneId === 2
+        ? 5000
+        : 10000
+
+  const zoneLabel = isCollection
+    ? 'Collection (EXW)'
+    : effectiveCountry?.zone_name ||
+      (selectedZoneId === 1
+        ? 'United Kingdom'
+        : selectedZoneId === 2
+          ? 'Europe'
+          : 'Rest of World')
+
   const belowMinimum = hasShipping && basketTotal < minimumOrder
 
   const maxWeight = Number(selectedContainer?.payload_weight_kg || 0)
@@ -81,6 +105,64 @@ function Basket() {
     !frozenMixed &&
     !overWeight &&
     !overVolume
+
+  useEffect(() => {
+    let active = true
+
+    if (isCollection || !selectedCountry?.country_name) {
+      setResolvedCountry(null)
+      return () => {
+        active = false
+      }
+    }
+
+    getCountries()
+      .then(countryData => {
+        if (!active) return
+
+        const countries = Array.isArray(countryData) ? countryData : []
+
+        const exactMatch = countries.find(country =>
+          String(country.id) === String(selectedCountry?.id) &&
+          String(country.country_name).trim().toLowerCase() ===
+            String(selectedCountry?.country_name).trim().toLowerCase()
+        )
+
+        const nameMatch = countries.find(country =>
+          String(country.country_name).trim().toLowerCase() ===
+          String(selectedCountry?.country_name).trim().toLowerCase()
+        )
+
+        setResolvedCountry(exactMatch || nameMatch || null)
+      })
+      .catch(error => {
+        console.error('Unable to refresh shipping country zone metadata.', error)
+        if (active) setResolvedCountry(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [isCollection, selectedCountry?.id, selectedCountry?.country_name])
+
+  useEffect(() => {
+    if (!showShippingEditor) return undefined
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [showShippingEditor])
+
+  function openShippingEditor() {
+    setShowShippingEditor(true)
+  }
+
+  function closeShippingEditor() {
+    setShowShippingEditor(false)
+  }
 
   function requestBasketRemoval(item) {
     setItemToRemove(item)
@@ -123,17 +205,27 @@ function Basket() {
           <div className="basket-shipping-strip">
             <div>
               <strong>Shipping:</strong> {selectedContainer?.container_name}
-              {!isCollection && <> · {selectedCountry?.country_name} · {selectedPort?.port_name}</>}
+              {!isCollection && <> · {effectiveCountry?.country_name} · {selectedPort?.port_name}</>}
             </div>
 
-            <Link to="/#shipping-selector" className="basket-change-btn">
+            <button
+              type="button"
+              className="basket-change-btn"
+              onClick={openShippingEditor}
+            >
               Change shipping option
-            </Link>
+            </button>
           </div>
         ) : (
           <Alert type="orange">
             <strong>Shipping option required.</strong> Please select a container before checkout.{' '}
-            <Link to="/#shipping-selector" className="basket-link">Choose shipping option</Link>
+            <button
+              type="button"
+              className="basket-link basket-inline-link"
+              onClick={openShippingEditor}
+            >
+              Choose shipping option
+            </button>
           </Alert>
         )}
 
@@ -151,6 +243,16 @@ function Basket() {
 
           {basketItems.map(item => {
             const unitsPerCase = Number(item.units_of || item.inner_case_quantity || 1)
+            const {
+              caseAllowed,
+              layerAllowed,
+              palletAllowed,
+            } = getOrderQuantityPermissions(item?.order_qty_allowed)
+
+            const layerAvailable =
+              layerAllowed && Number(item.layer_quantity || 0) > 0
+            const palletAvailable =
+              palletAllowed && Number(item.pallet_quantity || 0) > 0
 
             const lineWeight =
               Number(item.weight || 0) *
@@ -185,34 +287,68 @@ function Basket() {
                 <div>{money(item.price)}</div>
 
                 <div className="basket-qty-box">
-                  <div className="basket-pack-line dark">
+                  <div className={`basket-pack-line dark ${!palletAvailable ? 'disabled' : ''}`}>
                     Pallet - {Number(item.pallet_quantity || 0)} Cases
                   </div>
-                  <div className="basket-pack-line">
+                  <div className={`basket-pack-line ${!layerAvailable ? 'disabled' : ''}`}>
                     Layer - {Number(item.layer_quantity || 0)} Cases
                   </div>
-                  <div className="basket-pack-line muted">
-                    Case - Units
+                  <div className={`basket-pack-line ${!caseAllowed ? 'disabled' : ''}`}>
+                    Case - {unitsPerCase} Units
                   </div>
 
-                  <div className="basket-counter">
-                    <button onClick={() => changePalletQty(item.id, -1)}>-</button>
-                    <span>Pallets</span>
-                    <button onClick={() => changePalletQty(item.id, 1)}>+</button>
+                  <div className={`basket-counter ${!palletAvailable ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      disabled={!palletAvailable || Number(item.palletQty || 0) <= 0}
+                      onClick={() => changePalletQty(item.id, -1)}
+                    >
+                      -
+                    </button>
+                    <span>Pallets ({item.palletQty || 0})</span>
+                    <button
+                      type="button"
+                      disabled={!palletAvailable}
+                      onClick={() => changePalletQty(item.id, 1)}
+                    >
+                      +
+                    </button>
                   </div>
 
-                  {(item.caseQty > 0 || String(item.order_qty_allowed || item.qty_desc || '').toLowerCase() === 'case') && (
-                    <div className="basket-counter">
-                      <button onClick={() => changeCaseQty(item.id, -1)}>-</button>
-                      <span>Cases ({item.caseQty || 0})</span>
-                      <button onClick={() => changeCaseQty(item.id, 1)}>+</button>
-                    </div>
-                  )}
-
-                  <div className="basket-counter">
-                    <button onClick={() => changeLayerQty(item.id, -1)}>-</button>
+                  <div className={`basket-counter ${!layerAvailable ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      disabled={!layerAvailable || Number(item.layerQty || 0) <= 0}
+                      onClick={() => changeLayerQty(item.id, -1)}
+                    >
+                      -
+                    </button>
                     <span>Layers ({item.layerQty || 0})</span>
-                    <button onClick={() => changeLayerQty(item.id, 1)}>+</button>
+                    <button
+                      type="button"
+                      disabled={!layerAvailable}
+                      onClick={() => changeLayerQty(item.id, 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div className={`basket-counter ${!caseAllowed ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      disabled={!caseAllowed || Number(item.caseQty || 0) <= 0}
+                      onClick={() => changeCaseQty(item.id, -1)}
+                    >
+                      -
+                    </button>
+                    <span>Cases ({item.caseQty || 0})</span>
+                    <button
+                      type="button"
+                      disabled={!caseAllowed}
+                      onClick={() => changeCaseQty(item.id, 1)}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
 
@@ -251,7 +387,7 @@ function Basket() {
             <ContainerSummary
               isCollection={isCollection}
               selectedContainer={selectedContainer}
-              selectedCountry={selectedCountry}
+              selectedCountry={effectiveCountry}
               selectedPort={selectedPort}
               basketWeight={basketWeight}
               basketVolume={basketVolume}
@@ -268,6 +404,7 @@ function Basket() {
               canCheckout={canCheckout}
               removeByStorageType={removeByStorageType}
               money={money}
+              onChangeShipping={openShippingEditor}
             />
           )}
 
@@ -280,6 +417,48 @@ function Basket() {
           </button>
         </div>
       </div>
+
+      {showShippingEditor && (
+        <div
+          className="basket-shipping-modal-backdrop"
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              closeShippingEditor()
+            }
+          }}
+        >
+          <div
+            className="basket-shipping-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Change shipping option"
+          >
+            <div className="basket-shipping-modal-head">
+              <div>
+                <strong>Change shipping option</strong>
+                <span>Select a container, country and port without leaving your basket.</span>
+              </div>
+
+              <button
+                type="button"
+                className="basket-shipping-modal-close"
+                onClick={closeShippingEditor}
+                aria-label="Close shipping selector"
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <ShippingSelector
+              embedded
+              initialShipping={shipping}
+              onSaved={closeShippingEditor}
+            />
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         open={Boolean(itemToRemove)}
@@ -343,6 +522,7 @@ function ContainerSummary({
   canCheckout,
   removeByStorageType,
   money,
+  onChangeShipping,
 }) {
   const remainingVolume = Number(selectedContainer?.volume_m3 || 0) - basketVolume
   const remainingWeight = Number(selectedContainer?.payload_weight_kg || 0) - basketWeight
@@ -360,7 +540,7 @@ function ContainerSummary({
           {kg(basketWeight)} kg, {m3(basketVolume)} m³ ({m3(ft3(basketVolume))} ft³).
         </p>
         <p>{minimumText}</p>
-        <Link to="/#shipping-selector" className="status-change">Change shipping option</Link>
+        <button type="button" className="status-change" onClick={onChangeShipping}>Change shipping option</button>
       </div>
     )
   }
@@ -401,7 +581,7 @@ function ContainerSummary({
         </div>
 
         <p>{summary}</p>
-        <Link to="/#shipping-selector" className="status-change">Change shipping option</Link>
+        <button type="button" className="status-change" onClick={onChangeShipping}>Change shipping option</button>
       </div>
     )
   }
@@ -421,7 +601,7 @@ function ContainerSummary({
         </p>
 
         <p>{summary}</p>
-        <Link to="/#shipping-selector" className="status-change">Change shipping option</Link>
+        <button type="button" className="status-change" onClick={onChangeShipping}>Change shipping option</button>
       </div>
     )
   }
@@ -436,7 +616,7 @@ function ContainerSummary({
         </p>
 
         <p>{summary}</p>
-        <Link to="/#shipping-selector" className="status-change">Change shipping option</Link>
+        <button type="button" className="status-change" onClick={onChangeShipping}>Change shipping option</button>
       </div>
     )
   }
@@ -447,7 +627,7 @@ function ContainerSummary({
         <strong>{canCheckout ? 'Within container limits.' : 'Below minimum order value.'}</strong>{' '}
         {summary}
       </p>
-      <Link to="/#shipping-selector" className="status-change">Change shipping option</Link>
+      <button type="button" className="status-change" onClick={onChangeShipping}>Change shipping option</button>
     </div>
   )
 }

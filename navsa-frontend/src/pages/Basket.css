@@ -46,6 +46,8 @@
   text-decoration: none;
   font-weight: 900;
   display: inline-block;
+  cursor: pointer;
+  font: inherit;
 }
 
 .basket-table {
@@ -178,6 +180,13 @@
   background: #fafafa;
 }
 
+.basket-pack-line.disabled {
+  opacity: 0.45;
+  background: #f3f4f6;
+  color: #9ca3af;
+  border-color: #d1d5db;
+}
+
 .basket-counter {
   display: flex;
   align-items: center;
@@ -194,6 +203,15 @@
   background: #f4f4f4;
   font-weight: 900;
   cursor: pointer;
+}
+
+.basket-counter.disabled {
+  opacity: 0.45;
+}
+
+.basket-counter button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .basket-counter span {
@@ -384,5 +402,113 @@
     grid-column: 1;
     justify-self: stretch;
     width: 100%;
+  }
+}
+
+/* Basket-local shipping editor */
+.basket-inline-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.basket-shipping-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 18, 38, 0.72);
+  overflow-y: auto;
+}
+
+.basket-shipping-modal {
+  width: min(1500px, 96vw);
+  max-height: 94vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.32);
+}
+
+.basket-shipping-modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #dbe7f3;
+}
+
+.basket-shipping-modal-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.basket-shipping-modal-head strong {
+  color: var(--color-navy);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.basket-shipping-modal-head span {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.basket-shipping-modal-close {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 0;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: var(--color-navy);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.basket-shipping-modal .shipping-section {
+  padding: 22px 24px 28px;
+  background: #f5faff;
+}
+
+.basket-shipping-modal .shipping-card {
+  max-width: none;
+  padding: 28px;
+  border: 1px solid #dbe7f3;
+  box-shadow: none;
+}
+
+@media (max-width: 700px) {
+  .basket-shipping-modal-backdrop {
+    padding: 10px;
+  }
+
+  .basket-shipping-modal {
+    width: 100%;
+    max-height: 96vh;
+    border-radius: 14px;
+  }
+
+  .basket-shipping-modal-head {
+    padding: 14px;
+  }
+
+  .basket-shipping-modal .shipping-section {
+    padding: 12px;
+  }
+
+  .basket-shipping-modal .shipping-card {
+    padding: 18px;
   }
 }

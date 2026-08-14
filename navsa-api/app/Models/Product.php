@@ -252,7 +252,7 @@ class Product extends Model
 
     public function getOrderQuantityOptionsAttribute(): array
     {
-        $rule = strtoupper($this->order_qty_allowed ?? $this->qty_desc ?? 'DEFAULT');
+        $rule = $this->getOrderQtyAllowedAttribute();
 
         return [
             'case' => [
@@ -274,10 +274,12 @@ class Product extends Model
 
     public function getOrderQtyAllowedAttribute(): string
     {
-        $val = strtoupper($this->attributes['order_qty_allowed'] ?? $this->attributes['qty_desc'] ?? 'DEFAULT');
+        $val = strtoupper(trim((string) ($this->attributes['order_qty_allowed'] ?? 'DEFAULT')));
+
         if (in_array($val, ['CASE', 'PALLET', 'DEFAULT'], true)) {
             return $val;
         }
+
         return 'DEFAULT';
     }
 

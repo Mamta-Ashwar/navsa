@@ -1,4 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import {
+  getOrderQuantityPermissions,
+  normalizeOrderQtyAllowed,
+  sanitizeOrderQuantities,
+} from '../utils/orderQuantity'
 
 const CartContext = createContext(null)
 const BASKET_KEY = 'navsa_basket'
@@ -21,6 +26,39 @@ function calcCases(item, caseQty = 0, layerQty = 0, palletQty = 0) {
   )
 }
 
+
+function normaliseBasketItem(item) {
+  const orderQtyAllowed = normalizeOrderQtyAllowed(item?.order_qty_allowed)
+  const hadStructuredQuantity =
+    Number(item.caseQty || 0) > 0 ||
+    Number(item.layerQty || 0) > 0 ||
+    Number(item.palletQty || 0) > 0
+
+  const quantities = sanitizeOrderQuantities(
+    { ...item, order_qty_allowed: orderQtyAllowed },
+    {
+      caseQty: item.caseQty,
+      layerQty: item.layerQty,
+      palletQty: item.palletQty,
+    },
+  )
+
+  return {
+    ...item,
+    order_qty_allowed: orderQtyAllowed,
+    ...quantities,
+    totalCases: hadStructuredQuantity
+      ? calcCases(item, quantities.caseQty, quantities.layerQty, quantities.palletQty)
+      : Math.max(0, Number(item.totalCases || 0)),
+  }
+}
+
+function loadBasketFromStorage() {
+  return loadFromStorage(BASKET_KEY)
+    .map(normaliseBasketItem)
+    .filter(item => Number(item.totalCases || 0) > 0)
+}
+
 function unitsPerCase(item) {
   return Number(item.units_of || item.inner_case_quantity || item.case_size || 1)
 }
@@ -34,7 +72,7 @@ function lineVolume(item) {
 }
 
 export function CartProvider({ children }) {
-  const [basketItems, setBasketItems] = useState(() => loadFromStorage(BASKET_KEY))
+  const [basketItems, setBasketItems] = useState(() => loadBasketFromStorage())
   const [wishlistItems, setWishlistItems] = useState(() => loadFromStorage(WISHLIST_KEY))
 
   useEffect(() => {
@@ -46,7 +84,24 @@ export function CartProvider({ children }) {
   }, [wishlistItems])
 
   function addToBasket(product, { caseQty = 0, layerQty = 0, palletQty = 0 } = {}) {
-    const totalCases = calcCases(product, caseQty, layerQty, palletQty)
+    const orderQtyAllowed = normalizeOrderQtyAllowed(product?.order_qty_allowed)
+    const productWithRule = {
+      ...product,
+      order_qty_allowed: orderQtyAllowed,
+    }
+
+    const incoming = sanitizeOrderQuantities(productWithRule, {
+      caseQty,
+      layerQty,
+      palletQty,
+    })
+
+    const totalCases = calcCases(
+      productWithRule,
+      incoming.caseQty,
+      incoming.layerQty,
+      incoming.palletQty,
+    )
 
     if (totalCases <= 0) return false
 
@@ -57,16 +112,32 @@ export function CartProvider({ children }) {
         return prev.map(item => {
           if (item.id !== product.id) return item
 
-          const newCaseQty = Number(item.caseQty || 0) + Number(caseQty || 0)
-          const newLayerQty = Number(item.layerQty || 0) + Number(layerQty || 0)
-          const newPalletQty = Number(item.palletQty || 0) + Number(palletQty || 0)
+          const combined = sanitizeOrderQuantities(
+            {
+              ...item,
+              order_qty_allowed: orderQtyAllowed,
+              layer_quantity: product.layer_quantity ?? item.layer_quantity,
+              pallet_quantity: product.pallet_quantity ?? item.pallet_quantity,
+            },
+            {
+              caseQty: Number(item.caseQty || 0) + incoming.caseQty,
+              layerQty: Number(item.layerQty || 0) + incoming.layerQty,
+              palletQty: Number(item.palletQty || 0) + incoming.palletQty,
+            },
+          )
 
           return {
             ...item,
-            caseQty: newCaseQty,
-            layerQty: newLayerQty,
-            palletQty: newPalletQty,
-            totalCases: calcCases(item, newCaseQty, newLayerQty, newPalletQty),
+            order_qty_allowed: orderQtyAllowed,
+            layer_quantity: product.layer_quantity ?? item.layer_quantity,
+            pallet_quantity: product.pallet_quantity ?? item.pallet_quantity,
+            ...combined,
+            totalCases: calcCases(
+              productWithRule,
+              combined.caseQty,
+              combined.layerQty,
+              combined.palletQty,
+            ),
           }
         })
       }
@@ -80,6 +151,7 @@ export function CartProvider({ children }) {
           web_image: product.web_image || '',
           price: product.price || 0,
           reference: product.reference,
+          order_qty_allowed: orderQtyAllowed,
 
           layer_quantity: product.layer_quantity || 0,
           pallet_quantity: product.pallet_quantity || 0,
@@ -90,9 +162,7 @@ export function CartProvider({ children }) {
           volume: product.volume || 0,
           storage_type: product.storage_type || 'Ambient',
 
-          caseQty,
-          layerQty,
-          palletQty,
+          ...incoming,
           totalCases,
         },
       ]
@@ -106,10 +176,19 @@ export function CartProvider({ children }) {
       prev
         .map(item => {
           if (item.id !== id) return item
+
+          const { caseAllowed } = getOrderQuantityPermissions(item?.order_qty_allowed)
+          if (!caseAllowed) return item
+
           const caseQty = Math.max(0, Number(item.caseQty || 0) + amount)
           const layerQty = Number(item.layerQty || 0)
           const palletQty = Number(item.palletQty || 0)
-          return { ...item, caseQty, totalCases: calcCases(item, caseQty, layerQty, palletQty) }
+
+          return {
+            ...item,
+            caseQty,
+            totalCases: calcCases(item, caseQty, layerQty, palletQty),
+          }
         })
         .filter(item => Number(item.totalCases || 0) > 0)
     )
@@ -120,10 +199,19 @@ export function CartProvider({ children }) {
       prev
         .map(item => {
           if (item.id !== id) return item
+
+          const { layerAllowed } = getOrderQuantityPermissions(item?.order_qty_allowed)
+          if (!layerAllowed || Number(item.layer_quantity || 0) <= 0) return item
+
           const caseQty = Number(item.caseQty || 0)
           const layerQty = Math.max(0, Number(item.layerQty || 0) + amount)
           const palletQty = Number(item.palletQty || 0)
-          return { ...item, layerQty, totalCases: calcCases(item, caseQty, layerQty, palletQty) }
+
+          return {
+            ...item,
+            layerQty,
+            totalCases: calcCases(item, caseQty, layerQty, palletQty),
+          }
         })
         .filter(item => Number(item.totalCases || 0) > 0)
     )
@@ -134,9 +222,19 @@ export function CartProvider({ children }) {
       prev
         .map(item => {
           if (item.id !== id) return item
+
+          const { palletAllowed } = getOrderQuantityPermissions(item?.order_qty_allowed)
+          if (!palletAllowed || Number(item.pallet_quantity || 0) <= 0) return item
+
+          const caseQty = Number(item.caseQty || 0)
           const layerQty = Number(item.layerQty || 0)
           const palletQty = Math.max(0, Number(item.palletQty || 0) + amount)
-          return { ...item, palletQty, totalCases: calcCases(item, layerQty, palletQty) }
+
+          return {
+            ...item,
+            palletQty,
+            totalCases: calcCases(item, caseQty, layerQty, palletQty),
+          }
         })
         .filter(item => Number(item.totalCases || 0) > 0)
     )

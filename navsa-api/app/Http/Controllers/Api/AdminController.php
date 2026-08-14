@@ -749,6 +749,10 @@ class AdminController extends Controller
         if (array_key_exists('qty_desc', $data)) {
             $data['qty_desc'] = $this->normalizeQtyDesc($data['qty_desc']);
         }
+        if (array_key_exists('order_qty_allowed', $data)) {
+            $normalisedOrderQty = $this->normalizeOrderQtyAllowed($data['order_qty_allowed']);
+            $data['order_qty_allowed'] = $normalisedOrderQty ?? 'DEFAULT';
+        }
 
         $product = Product::create($data);
         return response()->json($product->load(['brand', 'category']), 201);
@@ -788,6 +792,10 @@ class AdminController extends Controller
         $data = $request->only($allowed);
         if (array_key_exists('qty_desc', $data)) {
             $data['qty_desc'] = $this->normalizeQtyDesc($data['qty_desc']);
+        }
+        if (array_key_exists('order_qty_allowed', $data)) {
+            $normalisedOrderQty = $this->normalizeOrderQtyAllowed($data['order_qty_allowed']);
+            $data['order_qty_allowed'] = $normalisedOrderQty ?? 'DEFAULT';
         }
 
         $product->update($data);
@@ -1976,24 +1984,43 @@ class AdminController extends Controller
             $mode = strtolower(trim((string) $request->input('mode', 'erp')));
             $isStep1 = ($mode === 'step1' || $request->boolean('step1'));
 
+            $orderQtyAllowedIdx =
+                $headerMap['order qty allowed']
+                ?? ($headerMap['orderqtyallowed'] ?? null);
+
             if ($isStep1) {
                 $newProductsFound = [];
-                $codeIdx = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? ($headerMap['primarysupplierindex'] ?? null));
+                $codeIdx = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? null);
                 $descIdx = $headerMap['description'] ?? ($headerMap['webshortdescription'] ?? null);
 
-                foreach ($rows as $rowIndex => $row) {
-                    $navsaProductCode = $codeIdx !== null ? trim((string) ($row[$codeIdx] ?? '')) : '';
-                    $description      = $descIdx !== null ? trim((string) ($row[$descIdx] ?? '')) : '';
+                if ($codeIdx === null) {
+                    return response()->json([
+                        'error' => 'Step 1 import requires a NAVSA Product Code or Reference column.',
+                        'message' => 'Step 1 import requires a NAVSA Product Code or Reference column.',
+                    ], 422);
+                }
 
-                    if (empty($description) && empty($navsaProductCode)) {
+                foreach ($rows as $rowIndex => $row) {
+                    $navsaProductCode = trim((string) ($row[$codeIdx] ?? ''));
+                    $description = $descIdx !== null
+                        ? trim((string) ($row[$descIdx] ?? ''))
+                        : '';
+
+                    if ($navsaProductCode === '' && $description === '') {
                         continue;
                     }
 
-                    $matchKey = !empty($navsaProductCode)
-                        ? ['navsa_product_code' => $navsaProductCode]
-                        : ['description' => $description];
+                    if ($navsaProductCode === '') {
+                        $newProductsFound[] = [
+                            'row' => $rowIndex + 2,
+                            'code' => '',
+                            'desc' => $description,
+                            'reason' => 'Missing NAVSA Product Code / Reference',
+                        ];
+                        continue;
+                    }
 
-                    $exists = Product::where($matchKey)->exists();
+                    $exists = Product::where('navsa_product_code', $navsaProductCode)->exists();
                     if (!$exists) {
                         $newProductsFound[] = [
                             'row'  => $rowIndex + 2,
@@ -2007,6 +2034,9 @@ class AdminController extends Controller
                     $totalNew = count($newProductsFound);
                     $formattedRows = array_map(function($item) {
                         $identifier = !empty($item['code']) ? "Code: {$item['code']}" : "Desc: {$item['desc']}";
+                        if (!empty($item['reason'])) {
+                            $identifier .= " - {$item['reason']}";
+                        }
                         return "Row {$item['row']} ({$identifier})";
                     }, $newProductsFound);
 
@@ -2015,7 +2045,7 @@ class AdminController extends Controller
                         $previewText .= ' and ' . ($totalNew - 15) . ' more...';
                     }
 
-                    $msg = "Step 1 import can ONLY update existing products. Found {$totalNew} NEW product(s) in Excel file that do not exist in database.\n\nNew data found at: {$previewText}\n\nPlease add these new products first (via Bulk ERP Import or Add Product), and then re-run Step 1 import.";
+                    $msg = "Step 1 import can ONLY update existing products by NAVSA Product Code / Reference. Found {$totalNew} row(s) that cannot be matched safely.\n\nRows: {$previewText}\n\nPlease correct/add those products first, then re-run Step 1 import.";
 
                     return response()->json([
                         'error' => $msg,
@@ -2026,11 +2056,95 @@ class AdminController extends Controller
                         'formatted_rows_text' => $previewText,
                     ], 422);
                 }
+
+                // A minimal Step 1 file may contain only:
+                // NAVSA Product Code/Reference, Description, ORDER QTY ALLOWED.
+                // In that case, update ONLY those supplied fields and never blank
+                // unrelated ERP product data.
+                $nonEmptyHeaderCount = count(array_filter($headers, function ($header) {
+                    return trim((string) $header) !== '';
+                }));
+                $isMinimalStep1 = $nonEmptyHeaderCount <= 3;
+
+                if ($isMinimalStep1) {
+                    if (!$hasOrderQtyAllowed) {
+                        return response()->json([
+                            'error' => 'products.order_qty_allowed is missing from the database.',
+                            'message' => 'products.order_qty_allowed is missing from the database.',
+                        ], 422);
+                    }
+
+                    if ($orderQtyAllowedIdx === null) {
+                        return response()->json([
+                            'error' => 'Minimal Step 1 import requires an ORDER QTY ALLOWED column.',
+                            'message' => 'Minimal Step 1 import requires an ORDER QTY ALLOWED column.',
+                        ], 422);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        $navsaProductCode = trim((string) ($row[$codeIdx] ?? ''));
+                        if ($navsaProductCode === '') {
+                            $skippedCount++;
+                            continue;
+                        }
+
+                        $rawOrderQty = $row[$orderQtyAllowedIdx] ?? null;
+                        $orderQtyAllowed = $this->normalizeOrderQtyAllowed($rawOrderQty);
+
+                        if ($orderQtyAllowed === null) {
+                            $errorCount++;
+                            \Illuminate\Support\Facades\Log::warning(
+                                'Step 1 import skipped row ' . ($rowIndex + 2)
+                                . ': invalid ORDER QTY ALLOWED value. Use blank, DEFAULT, PALLET or CASE.'
+                            );
+                            continue;
+                        }
+
+                        $product = Product::where('navsa_product_code', $navsaProductCode)->first();
+                        if (!$product) {
+                            $errorCount++;
+                            continue;
+                        }
+
+                        $updates = [
+                            'order_qty_allowed' => $orderQtyAllowed,
+                            'deleted' => false,
+                        ];
+
+                        if ($descIdx !== null) {
+                            $description = trim((string) ($row[$descIdx] ?? ''));
+                            if ($description !== '') {
+                                $updates['description'] = $description;
+                            }
+                        }
+
+                        $wasDeleted = (bool) $product->deleted;
+                        $product->update($updates);
+
+                        $importedCount++;
+                        $updatedCount++;
+                        if ($wasDeleted) {
+                            $restoredCount++;
+                        }
+                    }
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Step 1 product settings imported successfully!',
+                        'total' => $total,
+                        'imported' => $importedCount,
+                        'created' => 0,
+                        'updated' => $updatedCount,
+                        'restored' => $restoredCount,
+                        'skipped' => $skippedCount,
+                        'errors' => $errorCount,
+                    ]);
+                }
             }
 
             foreach ($rows as $rowIndex => $row) {
                 try {
-                    $codeIdx  = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? ($headerMap['primarysupplierindex'] ?? null));
+                    $codeIdx  = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? null);
                     $descIdx  = $headerMap['description'] ?? ($headerMap['webshortdescription'] ?? null);
 
                     $navsaProductCode = $codeIdx !== null ? trim((string) ($row[$codeIdx] ?? '')) : '';
@@ -2069,8 +2183,21 @@ class AdminController extends Controller
                         ? $this->normalizeQtyDesc($row[$qtyDescIdx] ?? null)
                         : null;
 
-                    $rawOrderQty = strtoupper(trim((string) ($row[$headerMap['order qty allowed'] ?? ($headerMap['orderqtyallowed'] ?? null)] ?? 'DEFAULT')));
-                    $orderQtyAllowed = in_array($rawOrderQty, ['DEFAULT', 'PALLET', 'CASE']) ? $rawOrderQty : 'DEFAULT';
+                    $orderQtyAllowed = null;
+                    if ($orderQtyAllowedIdx !== null) {
+                        $orderQtyAllowed = $this->normalizeOrderQtyAllowed(
+                            $row[$orderQtyAllowedIdx] ?? null
+                        );
+
+                        if ($orderQtyAllowed === null) {
+                            $errorCount++;
+                            \Illuminate\Support\Facades\Log::warning(
+                                'ERP/Step 1 import skipped row ' . ($rowIndex + 2)
+                                . ': invalid ORDER QTY ALLOWED value. Use blank, DEFAULT, PALLET or CASE.'
+                            );
+                            continue;
+                        }
+                    }
 
                     $validVatCodes = $validVatCodes ?? DB::table('vat_codes')->pluck('code')->toArray();
                     $rawVat     = trim((string) ($row[$headerMap['vatcode a=20% & z=0%'] ?? ($headerMap['vatcode'] ?? null)] ?? ''));
@@ -2271,7 +2398,7 @@ class AdminController extends Controller
                         'deleted'               => false,
                     ];
 
-                    if ($hasOrderQtyAllowed) {
+                    if ($hasOrderQtyAllowed && $orderQtyAllowedIdx !== null) {
                         $payload['order_qty_allowed'] = $orderQtyAllowed;
                     }
 
@@ -2428,6 +2555,21 @@ class AdminController extends Controller
             'pallet' => 'Pallet',
             default  => $raw,
         };
+    }
+
+    private function normalizeOrderQtyAllowed($value): ?string
+    {
+        $raw = strtoupper(trim((string) ($value ?? '')));
+
+        // Blank in Excel/admin means the NAVSA default:
+        // Case disabled, Layer enabled, Pallet enabled.
+        if ($raw === '') {
+            return 'DEFAULT';
+        }
+
+        return in_array($raw, ['DEFAULT', 'PALLET', 'CASE'], true)
+            ? $raw
+            : null;
     }
 
     private function toBoolean01($value): int
