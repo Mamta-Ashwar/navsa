@@ -22,15 +22,13 @@ use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
-    private function getAdminKey(): string
-    {
-        return env('ADMIN_API_KEY', 'navsa2024');
-    }
-
     private function auth(Request $request): bool
     {
-        $key = $request->header('X-Admin-Key') ?? $request->query('admin_key');
-        return $key === $this->getAdminKey() || $request->user() !== null;
+        $user = $request->user();
+
+        return $user !== null
+            && $user->status === 'approved'
+            && $user->role === 'admin';
     }
 
     private function deny()
@@ -266,9 +264,34 @@ class AdminController extends Controller
         return response()->json(['message' => 'Registration rejected successfully', 'user' => $user]);
     }
 
+
+    public function vatCodes(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $codes = DB::table('vat_codes')
+            ->where('active', 1)
+            ->orderBy('code')
+            ->get([
+                'id',
+                'code',
+                'percentage',
+                'description',
+                'vat_treatment',
+                'charge_for_uk',
+                'active',
+            ]);
+
+        return response()->json($codes);
+    }
+
     public function products(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
+
+        // Opening Product Management automatically moves overdue products
+        // into Deleted Items. No daily CMD step is required.
+        Product::expireObsoleteProducts();
 
         // Auto-expire offers/promotions whose to_date has passed
         $today = now()->toDateString();
@@ -405,6 +428,8 @@ class AdminController extends Controller
     {
         if (!$this->auth($request)) return $this->deny();
 
+        Product::expireObsoleteProducts();
+
         $validated = $this->validateBulkProductSelection($request);
         $query = $this->bulkProductSelectionQuery($validated, false);
         $selectedCount = (clone $query)->count();
@@ -455,8 +480,11 @@ class AdminController extends Controller
     {
         if (!$this->auth($request)) return $this->deny();
 
+        Product::expireObsoleteProducts();
+
         $validated = $this->validateBulkProductSelection($request);
         $query = $this->bulkProductSelectionQuery($validated, true);
+        $query = Product::constrainToNonExpiredObsolete($query);
         $selectedCount = (clone $query)->count();
 
         if ($selectedCount === 0) {
@@ -749,17 +777,20 @@ class AdminController extends Controller
             'barcode_case'       => 'nullable|string|max:50',
             'live_for_web'       => 'nullable|boolean',
             'qty_desc'            => 'nullable|string|max:50',
-            'order_qty_allowed'   => 'nullable|in:DEFAULT,PALLET,CASE',
+            'order_qty_allowed'      => 'nullable|in:DEFAULT,PALLET,CASE',
+            'primary_supplier_index' => 'nullable|string|max:100',
+            'supplier_reference'     => 'nullable|string|max:100',
+            'obsolete'               => 'nullable|date',
         ]);
 
         $allowed = [
-            'navsa_product_code', 'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
+            'navsa_product_code', 'description', 'supplier_id', 'primary_supplier_index', 'category_id', 'sub_category_id', 'brand_id',
             'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc', 'order_qty_allowed',
             'barcode_ean', 'barcode_case', 'group_desc', 'vat_code',
             'layer_quantity', 'pallet_quantity', 'supplier_reference',
             'cost', 'cost_from_date', 'cost_to_date', 'price_list', 'price', 'from_date', 'to_date',
             'weight', 'volume', 'shelf_life', 'bbd', 'comm_code', 'intra_country', 'intra_type',
-            'web_short_description', 'web_long_description', 'web_image', 'live_for_web',
+            'web_short_description', 'web_long_description', 'web_image', 'live_for_web', 'obsolete',
             'is_offer', 'offer_label', 'stock_quantity', 'is_best_offer', 'is_new_arrival',
         ];
 
@@ -770,6 +801,13 @@ class AdminController extends Controller
         if (array_key_exists('order_qty_allowed', $data)) {
             $normalisedOrderQty = $this->normalizeOrderQtyAllowed($data['order_qty_allowed']);
             $data['order_qty_allowed'] = $normalisedOrderQty ?? 'DEFAULT';
+        }
+        if (array_key_exists('obsolete', $data)) {
+            $data['obsolete'] = $this->toDateOrNull($data['obsolete']);
+            if (Product::isObsoleteDateExpired($data['obsolete'])) {
+                $data['deleted'] = true;
+                $data['live_for_web'] = 0;
+            }
         }
 
         $product = Product::create($data);
@@ -793,17 +831,20 @@ class AdminController extends Controller
             'barcode_case'       => 'nullable|string|max:50',
             'live_for_web'       => 'nullable|boolean',
             'qty_desc'            => 'nullable|string|max:50',
-            'order_qty_allowed'   => 'nullable|in:DEFAULT,PALLET,CASE',
+            'order_qty_allowed'      => 'nullable|in:DEFAULT,PALLET,CASE',
+            'primary_supplier_index' => 'nullable|string|max:100',
+            'supplier_reference'     => 'nullable|string|max:100',
+            'obsolete'               => 'nullable|date',
         ]);
 
         $allowed = [
-            'description', 'supplier_id', 'category_id', 'sub_category_id', 'brand_id',
+            'description', 'supplier_id', 'primary_supplier_index', 'category_id', 'sub_category_id', 'brand_id',
             'units_of', 'inner_case_quantity', 'outer_case_quantity', 'qty_desc', 'order_qty_allowed',
             'barcode_ean', 'barcode_case', 'group_desc', 'vat_code',
             'layer_quantity', 'pallet_quantity', 'supplier_reference',
             'cost', 'cost_from_date', 'cost_to_date', 'price_list', 'price', 'from_date', 'to_date',
             'weight', 'volume', 'shelf_life', 'bbd', 'comm_code', 'intra_country', 'intra_type',
-            'web_short_description', 'web_long_description', 'web_image', 'live_for_web',
+            'web_short_description', 'web_long_description', 'web_image', 'live_for_web', 'obsolete',
             'is_offer', 'offer_label', 'stock_quantity', 'is_best_offer', 'is_new_arrival',
         ];
 
@@ -814,6 +855,13 @@ class AdminController extends Controller
         if (array_key_exists('order_qty_allowed', $data)) {
             $normalisedOrderQty = $this->normalizeOrderQtyAllowed($data['order_qty_allowed']);
             $data['order_qty_allowed'] = $normalisedOrderQty ?? 'DEFAULT';
+        }
+        if (array_key_exists('obsolete', $data)) {
+            $data['obsolete'] = $this->toDateOrNull($data['obsolete']);
+            if (Product::isObsoleteDateExpired($data['obsolete'])) {
+                $data['deleted'] = true;
+                $data['live_for_web'] = 0;
+            }
         }
 
         $product->update($data);
@@ -833,6 +881,18 @@ class AdminController extends Controller
         }
 
         $new = $product->live_for_web ? 0 : 1;
+
+        if ($new === 1 && Product::isObsoleteDateExpired($product->obsolete)) {
+            $product->update([
+                'deleted' => true,
+                'live_for_web' => 0,
+            ]);
+
+            return response()->json([
+                'message' => 'This product cannot be made live because its Obsolete date has passed.',
+            ], 422);
+        }
+
         $product->update(['live_for_web' => $new]);
 
         return response()->json([
@@ -950,6 +1010,18 @@ class AdminController extends Controller
         if (!$this->auth($request)) return $this->deny();
 
         $product = Product::findOrFail($id);
+
+        if (Product::isObsoleteDateExpired($product->obsolete)) {
+            $product->update([
+                'deleted' => true,
+                'live_for_web' => 0,
+            ]);
+
+            return response()->json([
+                'message' => 'This product cannot be restored because its Obsolete date has passed.',
+            ], 422);
+        }
+
         $product->update([
             'deleted' => false,
             'live_for_web' => 1,
@@ -1311,79 +1383,912 @@ class AdminController extends Controller
     public function brands(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
-        $q = Brand::withCount('products');
+
+        $query = Brand::withCount('products');
+
         if (!$request->filled('show_deleted')) {
-            $q->where(function ($sub) { $sub->where('deleted', false)->orWhereNull('deleted'); });
+            $query->where(function ($brandQuery) {
+                $brandQuery
+                    ->where('deleted', false)
+                    ->orWhereNull('deleted');
+            });
         }
-        return $q->orderBy('brand_name')->get();
+
+        return $query
+            ->orderBy('brand_name')
+            ->get();
     }
 
     public function createBrand(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
-        $brand = Brand::create(['brand_name' => trim($request->brand_name), 'status' => 1, 'deleted' => false]);
+
+        $validated = $request->validate([
+            'brand_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('brands', 'brand_name'),
+            ],
+        ]);
+
+        $brand = Brand::create([
+            'brand_name' => trim($validated['brand_name']),
+            'status' => 1,
+            'deleted' => false,
+        ]);
+
         return response()->json($brand->loadCount('products'), 201);
     }
 
     public function updateBrand(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $brand = Brand::findOrFail($id);
-        $brand->update($request->only(['brand_name', 'status']));
-        return response()->json($brand->loadCount('products'));
+
+        $validated = $request->validate([
+            'brand_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('brands', 'brand_name')->ignore($brand->id),
+            ],
+            'status' => ['sometimes', 'boolean'],
+        ]);
+
+        $brand->update([
+            'brand_name' => trim($validated['brand_name']),
+            'status' => array_key_exists('status', $validated)
+                ? (int) $validated['status']
+                : (int) $brand->status,
+        ]);
+
+        return response()->json($brand->fresh()->loadCount('products'));
+    }
+
+    private function validateBulkBrandIds(Request $request): array
+    {
+        return $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:5000'],
+            'ids.*' => ['integer', 'distinct', 'exists:brands,id'],
+        ]);
+    }
+
+    private function activeBrandSelectionQuery(array $ids)
+    {
+        return Brand::query()
+            ->whereIn('id', array_map('intval', $ids))
+            ->where(function ($brandQuery) {
+                $brandQuery
+                    ->where('deleted', false)
+                    ->orWhereNull('deleted');
+            });
+    }
+
+    private function deletedBrandSelectionQuery(array $ids)
+    {
+        return Brand::query()
+            ->whereIn('id', array_map('intval', $ids))
+            ->where('deleted', true);
+    }
+
+    public function bulkHideBrands(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkBrandIds($request);
+        $query = $this->activeBrandSelectionQuery($validated['ids']);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No active brands matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update(['status' => 0]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'hidden' => true,
+            'message' => $selectedCount . ' brand(s) hidden from the public brand directory.',
+        ]);
+    }
+
+    public function bulkShowBrands(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkBrandIds($request);
+        $query = $this->activeBrandSelectionQuery($validated['ids']);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No active brands matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update(['status' => 1]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'hidden' => false,
+            'message' => $selectedCount . ' brand(s) made visible in the public brand directory.',
+        ]);
+    }
+
+    public function bulkSoftDeleteBrands(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkBrandIds($request);
+        $query = $this->activeBrandSelectionQuery($validated['ids']);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No active brands matched the selected bulk action.',
+            ], 422);
+        }
+
+        $query->update([
+            'deleted' => true,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'deleted' => true,
+            'permanent' => false,
+            'message' => $selectedCount . ' brand(s) moved to deleted brands.',
+        ]);
+    }
+
+    public function bulkRestoreBrands(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkBrandIds($request);
+        $query = $this->deletedBrandSelectionQuery($validated['ids']);
+        $selectedCount = (clone $query)->count();
+
+        if ($selectedCount === 0) {
+            return response()->json([
+                'message' => 'No deleted brands matched the selected restore action.',
+            ], 422);
+        }
+
+        // Restored brands stay hidden until an admin explicitly makes them public.
+        $query->update([
+            'deleted' => false,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $selectedCount,
+            'deleted' => false,
+            'message' => $selectedCount . ' brand(s) restored. Restored brands remain hidden until shown.',
+        ]);
     }
 
     public function softDeleteBrand(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        Brand::findOrFail($id)->update(['deleted' => true, 'status' => 0]);
-        return response()->json(['id' => $id, 'deleted' => true]);
+
+        $brand = Brand::findOrFail($id);
+
+        $brand->update([
+            'deleted' => true,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $brand->id,
+            'deleted' => true,
+            'permanent' => false,
+            'message' => 'Brand moved to deleted brands.',
+        ]);
+    }
+
+    public function restoreBrand(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $brand = Brand::findOrFail($id);
+
+        if (!$brand->deleted) {
+            return response()->json([
+                'message' => 'This brand is not deleted.',
+            ], 422);
+        }
+
+        // Restore into Admin as hidden so an accidental restore never publishes it.
+        $brand->update([
+            'deleted' => false,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $brand->id,
+            'deleted' => false,
+            'status' => false,
+            'message' => 'Brand restored. It remains hidden until shown.',
+        ]);
     }
 
     public function hardDeleteBrand(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        Brand::findOrFail($id)->delete();
-        return response()->json(['id' => $id, 'destroyed' => true]);
+
+        $brand = Brand::withCount('products')->findOrFail($id);
+
+        if (!$brand->deleted) {
+            return response()->json([
+                'message' => 'Move this brand to Deleted before permanently deleting it.',
+            ], 422);
+        }
+
+        if ((int) $brand->products_count > 0) {
+            return response()->json([
+                'message' => 'This brand cannot be permanently deleted while products are assigned to it. Move or reassign those products first.',
+                'products_count' => (int) $brand->products_count,
+            ], 422);
+        }
+
+        $brand->delete();
+
+        return response()->json([
+            'id' => (int) $brand->id,
+            'destroyed' => true,
+            'message' => 'Brand permanently deleted.',
+        ]);
     }
 
     public function categories(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
-        $q = Category::withCount('products');
-        if (!$request->filled('show_deleted')) {
-            $q->where(function ($sub) { $sub->where('deleted', false)->orWhereNull('deleted'); });
+
+        $query = Category::query()
+            ->whereNull('parent_id')
+            ->withCount(['products', 'subCategories']);
+
+        if (!$request->boolean('show_deleted')) {
+            $query->where(function ($categoryQuery) {
+                $categoryQuery
+                    ->where('deleted', false)
+                    ->orWhereNull('deleted');
+            });
         }
-        return $q->orderBy('category_name')->get();
+
+        return response()->json(
+            $query->orderBy('category_name')->get()
+        );
     }
 
     public function createCategory(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
-        $cat = Category::create(['category_name' => trim($request->category_name), 'status' => 1, 'deleted' => false]);
-        return response()->json($cat->loadCount('products'), 201);
+
+        $validated = $request->validate([
+            'category_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('categories', 'category_name'),
+            ],
+        ]);
+
+        $category = Category::create([
+            'category_name' => trim($validated['category_name']),
+            'parent_id' => null,
+            'status' => 1,
+            'deleted' => false,
+        ]);
+
+        return response()->json(
+            $category->loadCount(['products', 'subCategories']),
+            201
+        );
     }
 
     public function updateCategory(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        $cat = Category::findOrFail($id);
-        $cat->update($request->only(['category_name', 'status']));
-        return response()->json($cat->loadCount('products'));
+
+        $category = Category::whereNull('parent_id')->findOrFail($id);
+
+        $validated = $request->validate([
+            'category_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('categories', 'category_name')->ignore($category->id),
+            ],
+            'status' => ['sometimes', 'boolean'],
+        ]);
+
+        $category->update([
+            'category_name' => trim($validated['category_name']),
+            'status' => array_key_exists('status', $validated)
+                ? (int) $validated['status']
+                : (int) $category->status,
+        ]);
+
+        return response()->json(
+            $category->fresh()->loadCount(['products', 'subCategories'])
+        );
+    }
+
+    private function deleteManagedCategoryImage(?string $path): void
+    {
+        if (!$path || str_starts_with($path, '/') || preg_match('/^https?:\/\//i', $path)) {
+            return;
+        }
+
+        Storage::disk('public')->delete($path);
+    }
+
+    public function uploadCategoryImage(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $category = Category::whereNull('parent_id')->findOrFail($id);
+
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,jpg,png,webp|max:10240',
+        ]);
+
+        $newPath = $request->file('image')->store('categories', 'public');
+        $this->deleteManagedCategoryImage($category->image_path);
+
+        $category->update(['image_path' => $newPath]);
+
+        return response()->json(
+            $category->fresh()->loadCount(['products', 'subCategories'])
+        );
+    }
+
+    private function validateBulkCategoryIds(Request $request): array
+    {
+        return $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:5000'],
+            'ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+        ]);
+    }
+
+    private function availableCategorySelectionQuery(array $ids)
+    {
+        return Category::query()
+            ->whereNull('parent_id')
+            ->whereIn('id', array_map('intval', $ids))
+            ->where(function ($categoryQuery) {
+                $categoryQuery
+                    ->where('deleted', false)
+                    ->orWhereNull('deleted');
+            });
+    }
+
+    private function deletedCategorySelectionQuery(array $ids)
+    {
+        return Category::query()
+            ->whereNull('parent_id')
+            ->whereIn('id', array_map('intval', $ids))
+            ->where('deleted', true);
+    }
+
+    public function bulkHideCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkCategoryIds($request);
+        $query = $this->availableCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No available main categories matched this action.'], 422);
+        }
+
+        $query->update(['status' => 0]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' main categor' . ($count === 1 ? 'y' : 'ies') . ' hidden from the public catalogue.',
+        ]);
+    }
+
+    public function bulkShowCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkCategoryIds($request);
+        $query = $this->availableCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No available main categories matched this action.'], 422);
+        }
+
+        $query->update(['status' => 1]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' main categor' . ($count === 1 ? 'y' : 'ies') . ' made visible in the public catalogue.',
+        ]);
+    }
+
+    public function bulkSoftDeleteCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkCategoryIds($request);
+        $query = $this->availableCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No available main categories matched this action.'], 422);
+        }
+
+        $query->update([
+            'deleted' => true,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' main categor' . ($count === 1 ? 'y was' : 'ies were') . ' moved to Deleted.',
+        ]);
+    }
+
+    public function bulkRestoreCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkCategoryIds($request);
+        $query = $this->deletedCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No deleted main categories matched this restore action.'], 422);
+        }
+
+        $query->update([
+            'deleted' => false,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' main categor' . ($count === 1 ? 'y restored' : 'ies restored') . ' as Hidden.',
+        ]);
+    }
+
+    public function bulkHardDeleteCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkCategoryIds($request);
+        $rows = $this->deletedCategorySelectionQuery($validated['ids'])
+            ->withCount(['products', 'subCategories'])
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return response()->json(['message' => 'No deleted main categories matched this permanent-delete action.'], 422);
+        }
+
+        $blocked = $rows->filter(function ($category) {
+            return (int) $category->products_count > 0
+                || (int) $category->sub_categories_count > 0;
+        });
+
+        if ($blocked->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Permanent delete blocked. Reassign products and remove/reassign subcategories from the selected main categories first.',
+                'blocked_count' => $blocked->count(),
+                'blocked' => $blocked->map(fn ($category) => [
+                    'id' => (int) $category->id,
+                    'name' => $category->category_name,
+                    'products_count' => (int) $category->products_count,
+                    'sub_categories_count' => (int) $category->sub_categories_count,
+                ])->values(),
+            ], 422);
+        }
+
+        foreach ($rows as $category) {
+            $this->deleteManagedCategoryImage($category->image_path);
+        }
+
+        $ids = $rows->pluck('id')->all();
+        Category::whereIn('id', $ids)->delete();
+
+        return response()->json([
+            'selected_count' => count($ids),
+            'destroyed' => true,
+            'message' => count($ids) . ' main categor' . (count($ids) === 1 ? 'y permanently deleted.' : 'ies permanently deleted.'),
+        ]);
     }
 
     public function softDeleteCategory(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        Category::findOrFail($id)->update(['deleted' => true, 'status' => 0]);
-        return response()->json(['id' => $id, 'deleted' => true]);
+
+        $category = Category::whereNull('parent_id')->findOrFail($id);
+        $category->update([
+            'deleted' => true,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $category->id,
+            'deleted' => true,
+            'permanent' => false,
+            'message' => 'Main category moved to Deleted. Products and subcategories remain assigned.',
+        ]);
+    }
+
+    public function restoreCategory(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $category = Category::whereNull('parent_id')->findOrFail($id);
+
+        if (!$category->deleted) {
+            return response()->json(['message' => 'This main category is not deleted.'], 422);
+        }
+
+        $category->update([
+            'deleted' => false,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $category->id,
+            'deleted' => false,
+            'status' => false,
+            'message' => 'Main category restored as Hidden.',
+        ]);
     }
 
     public function hardDeleteCategory(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
-        Category::findOrFail($id)->delete();
-        return response()->json(['id' => $id, 'destroyed' => true]);
+
+        $category = Category::whereNull('parent_id')
+            ->withCount(['products', 'subCategories'])
+            ->findOrFail($id);
+
+        if (!$category->deleted) {
+            return response()->json(['message' => 'Move this main category to Deleted before permanently deleting it.'], 422);
+        }
+
+        if ((int) $category->products_count > 0) {
+            return response()->json([
+                'message' => 'This main category cannot be permanently deleted while products are assigned to it.',
+                'products_count' => (int) $category->products_count,
+            ], 422);
+        }
+
+        if ((int) $category->sub_categories_count > 0) {
+            return response()->json([
+                'message' => 'This main category cannot be permanently deleted while subcategories belong to it.',
+                'sub_categories_count' => (int) $category->sub_categories_count,
+            ], 422);
+        }
+
+        $this->deleteManagedCategoryImage($category->image_path);
+        $category->delete();
+
+        return response()->json([
+            'id' => (int) $category->id,
+            'destroyed' => true,
+            'message' => 'Main category permanently deleted.',
+        ]);
+    }
+
+    public function subCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $query = SubCategory::query()
+            ->with('category:id,category_name,status,deleted')
+            ->withCount('products');
+
+        if (!$request->boolean('show_deleted')) {
+            $query->where(function ($subCategoryQuery) {
+                $subCategoryQuery
+                    ->where('deleted', false)
+                    ->orWhereNull('deleted');
+            });
+        }
+
+        return response()->json(
+            $query
+                ->orderBy('category_id')
+                ->orderBy('sub_category_name')
+                ->get()
+        );
+    }
+
+    private function validatedSubCategoryPayload(Request $request, ?SubCategory $subCategory = null): array
+    {
+        $groupCodeRule = Rule::unique('sub_categories', 'group_code');
+        if ($subCategory) {
+            $groupCodeRule = $groupCodeRule->ignore($subCategory->id);
+        }
+
+        $validated = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'sub_category_name' => ['required', 'string', 'max:100'],
+            'group_code' => ['required', 'string', 'max:10', $groupCodeRule],
+            'status' => ['sometimes', 'boolean'],
+        ]);
+
+        $parent = Category::whereNull('parent_id')->find($validated['category_id']);
+        if (!$parent || $parent->deleted) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'category_id' => ['Choose an available main category for this subcategory.'],
+            ]);
+        }
+
+        return $validated;
+    }
+
+    public function createSubCategory(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validatedSubCategoryPayload($request);
+
+        $subCategory = SubCategory::create([
+            'category_id' => (int) $validated['category_id'],
+            'sub_category_name' => trim($validated['sub_category_name']),
+            'group_code' => strtoupper(trim($validated['group_code'])),
+            'status' => 1,
+            'deleted' => false,
+        ]);
+
+        return response()->json(
+            $subCategory->load('category:id,category_name,status,deleted')->loadCount('products'),
+            201
+        );
+    }
+
+    public function updateSubCategory(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $subCategory = SubCategory::findOrFail($id);
+        $validated = $this->validatedSubCategoryPayload($request, $subCategory);
+
+        $subCategory->update([
+            'category_id' => (int) $validated['category_id'],
+            'sub_category_name' => trim($validated['sub_category_name']),
+            'group_code' => strtoupper(trim($validated['group_code'])),
+            'status' => array_key_exists('status', $validated)
+                ? (int) $validated['status']
+                : (int) $subCategory->status,
+        ]);
+
+        return response()->json(
+            $subCategory->fresh()->load('category:id,category_name,status,deleted')->loadCount('products')
+        );
+    }
+
+    private function validateBulkSubCategoryIds(Request $request): array
+    {
+        return $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:5000'],
+            'ids.*' => ['integer', 'distinct', 'exists:sub_categories,id'],
+        ]);
+    }
+
+    private function availableSubCategorySelectionQuery(array $ids)
+    {
+        return SubCategory::query()
+            ->whereIn('id', array_map('intval', $ids))
+            ->where(function ($subCategoryQuery) {
+                $subCategoryQuery
+                    ->where('deleted', false)
+                    ->orWhereNull('deleted');
+            });
+    }
+
+    private function deletedSubCategorySelectionQuery(array $ids)
+    {
+        return SubCategory::query()
+            ->whereIn('id', array_map('intval', $ids))
+            ->where('deleted', true);
+    }
+
+    public function bulkHideSubCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkSubCategoryIds($request);
+        $query = $this->availableSubCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No available subcategories matched this action.'], 422);
+        }
+
+        $query->update(['status' => 0]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' subcategor' . ($count === 1 ? 'y' : 'ies') . ' hidden from the public catalogue.',
+        ]);
+    }
+
+    public function bulkShowSubCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkSubCategoryIds($request);
+        $query = $this->availableSubCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No available subcategories matched this action.'], 422);
+        }
+
+        $query->update(['status' => 1]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' subcategor' . ($count === 1 ? 'y' : 'ies') . ' made visible in the public catalogue when their main category is active.',
+        ]);
+    }
+
+    public function bulkSoftDeleteSubCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkSubCategoryIds($request);
+        $query = $this->availableSubCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No available subcategories matched this action.'], 422);
+        }
+
+        $query->update([
+            'deleted' => true,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' subcategor' . ($count === 1 ? 'y was' : 'ies were') . ' moved to Deleted.',
+        ]);
+    }
+
+    public function bulkRestoreSubCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkSubCategoryIds($request);
+        $query = $this->deletedSubCategorySelectionQuery($validated['ids']);
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return response()->json(['message' => 'No deleted subcategories matched this restore action.'], 422);
+        }
+
+        $query->update([
+            'deleted' => false,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'selected_count' => $count,
+            'message' => $count . ' subcategor' . ($count === 1 ? 'y restored' : 'ies restored') . ' as Hidden.',
+        ]);
+    }
+
+    public function bulkHardDeleteSubCategories(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $this->validateBulkSubCategoryIds($request);
+        $rows = $this->deletedSubCategorySelectionQuery($validated['ids'])
+            ->withCount('products')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return response()->json(['message' => 'No deleted subcategories matched this permanent-delete action.'], 422);
+        }
+
+        $blocked = $rows->filter(fn ($subCategory) => (int) $subCategory->products_count > 0);
+
+        if ($blocked->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Permanent delete blocked. Reassign products from the selected subcategories first.',
+                'blocked_count' => $blocked->count(),
+                'blocked' => $blocked->map(fn ($subCategory) => [
+                    'id' => (int) $subCategory->id,
+                    'name' => $subCategory->sub_category_name,
+                    'products_count' => (int) $subCategory->products_count,
+                ])->values(),
+            ], 422);
+        }
+
+        $ids = $rows->pluck('id')->all();
+        SubCategory::whereIn('id', $ids)->delete();
+
+        return response()->json([
+            'selected_count' => count($ids),
+            'destroyed' => true,
+            'message' => count($ids) . ' subcategor' . (count($ids) === 1 ? 'y permanently deleted.' : 'ies permanently deleted.'),
+        ]);
+    }
+
+    public function softDeleteSubCategory(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $subCategory = SubCategory::findOrFail($id);
+        $subCategory->update([
+            'deleted' => true,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $subCategory->id,
+            'deleted' => true,
+            'permanent' => false,
+            'message' => 'Subcategory moved to Deleted. Products remain assigned.',
+        ]);
+    }
+
+    public function restoreSubCategory(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $subCategory = SubCategory::findOrFail($id);
+
+        if (!$subCategory->deleted) {
+            return response()->json(['message' => 'This subcategory is not deleted.'], 422);
+        }
+
+        $subCategory->update([
+            'deleted' => false,
+            'status' => 0,
+        ]);
+
+        return response()->json([
+            'id' => (int) $subCategory->id,
+            'deleted' => false,
+            'status' => false,
+            'message' => 'Subcategory restored as Hidden.',
+        ]);
+    }
+
+    public function hardDeleteSubCategory(Request $request, $id)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $subCategory = SubCategory::withCount('products')->findOrFail($id);
+
+        if (!$subCategory->deleted) {
+            return response()->json(['message' => 'Move this subcategory to Deleted before permanently deleting it.'], 422);
+        }
+
+        if ((int) $subCategory->products_count > 0) {
+            return response()->json([
+                'message' => 'This subcategory cannot be permanently deleted while products are assigned to it.',
+                'products_count' => (int) $subCategory->products_count,
+            ], 422);
+        }
+
+        $subCategory->delete();
+
+        return response()->json([
+            'id' => (int) $subCategory->id,
+            'destroyed' => true,
+            'message' => 'Subcategory permanently deleted.',
+        ]);
     }
 
     private function normaliseBannerSortOrder(?string $position = null): void
@@ -1826,6 +2731,9 @@ class AdminController extends Controller
     {
         if (!$this->auth($request)) return $this->deny();
 
+        // Keep catalogue lifecycle current before processing a new upload.
+        Product::expireObsoleteProducts();
+
         $request->validate([
             'file' => [
                 'required',
@@ -1977,7 +2885,14 @@ class AdminController extends Controller
             $unknownCodes  = [];
             $unknownBrands = [];
 
-            $suppliers = Supplier::pluck('id', 'id')->toArray();
+            $supplierLookup = Supplier::query()
+                ->whereNotNull('supplier_index')
+                ->get(['id', 'supplier_index'])
+                ->mapWithKeys(function ($supplier) {
+                    $key = trim((string) $supplier->supplier_index);
+                    return $key === '' ? [] : [$key => (int) $supplier->id];
+                })
+                ->toArray();
             $brandLookupMaps = $this->buildBrandLookupMaps();
 
             $subCategoryMap = [];
@@ -2016,6 +2931,20 @@ class AdminController extends Controller
             $orderQtyAllowedIdx =
                 $headerMap['order qty allowed']
                 ?? ($headerMap['orderqtyallowed'] ?? null);
+
+            // VAT codes are database-driven. The ERP VatCode column stores only
+            // the code (A, C, D, E, F, G, H, M, N, O, Z, etc.); percentage and
+            // description always come from the active vat_codes table.
+            $validVatCodes = DB::table('vat_codes')
+                ->where('active', 1)
+                ->pluck('code')
+                ->map(fn ($code) => strtoupper(trim((string) $code)))
+                ->filter()
+                ->values()
+                ->all();
+
+            $vatCodeIdx = $headerMap['vatcode']
+                ?? ($headerMap['vat_code'] ?? null);
 
             if ($isStep1) {
                 $newProductsFound = [];
@@ -2135,10 +3064,18 @@ class AdminController extends Controller
                             continue;
                         }
 
+                        $obsoleteExpired = Product::isObsoleteDateExpired($product->obsolete);
+
                         $updates = [
                             'order_qty_allowed' => $orderQtyAllowed,
-                            'deleted' => false,
+                            // Step 1 may restore ordinary soft-deleted items, but it
+                            // must never restore a product whose Obsolete date passed.
+                            'deleted' => $obsoleteExpired ? true : false,
                         ];
+
+                        if ($obsoleteExpired) {
+                            $updates['live_for_web'] = 0;
+                        }
 
                         if ($descIdx !== null) {
                             $description = trim((string) ($row[$descIdx] ?? ''));
@@ -2294,16 +3231,20 @@ class AdminController extends Controller
                         }
                     }
 
-                    $validVatCodes = $validVatCodes ?? DB::table('vat_codes')->pluck('code')->toArray();
-                    $rawVat     = trim((string) ($row[$headerMap['vatcode a=20% & z=0%'] ?? ($headerMap['vatcode'] ?? null)] ?? ''));
-                    $vatCode    = !empty($rawVat) ? strtoupper(substr($rawVat, 0, 1)) : null;
-                    if ($vatCode === 'S' || $vatCode === '2' || $rawVat === '20') {
-                        $vatCode = 'A';
-                    } elseif ($rawVat === '0') {
-                        $vatCode = 'Z';
-                    }
-                    if ($vatCode && !in_array($vatCode, $validVatCodes)) {
-                        $vatCode = null;
+                    $rawVat = $vatCodeIdx !== null
+                        ? strtoupper(trim((string) ($row[$vatCodeIdx] ?? '')))
+                        : '';
+
+                    $vatCode = $rawVat !== '' ? $rawVat : null;
+
+                    if ($vatCode !== null && !in_array($vatCode, $validVatCodes, true)) {
+                        $errorCount++;
+                        \Illuminate\Support\Facades\Log::warning(
+                            'ERP import skipped row ' . ($rowIndex + 2)
+                            . ": unknown/inactive VAT code '{$vatCode}'. "
+                            . 'Add/activate the code in vat_codes or correct the ERP VatCode value.'
+                        );
+                        continue;
                     }
 
                     $layerQtyIdx  = $headerMap['layerquantity'] ?? ($headerMap['layer_quantity'] ?? null);
@@ -2312,8 +3253,34 @@ class AdminController extends Controller
                     $layerQty  = $layerQtyIdx !== null ? $this->toNumberOrNull($row[$layerQtyIdx] ?? null) : null;
                     $palletQty = $palletQtyIdx !== null ? $this->toNumberOrNull($row[$palletQtyIdx] ?? null) : null;
 
+                    $supplierIndexIdx = $headerMap['primarysupplierindex'] ?? ($headerMap['primary_supplier_index'] ?? null);
+                    $supplierIndex    = $supplierIndexIdx !== null
+                        ? trim((string) ($row[$supplierIndexIdx] ?? ''))
+                        : '';
+
+                    $supplierId = $supplierIndex !== ''
+                        ? ($supplierLookup[$supplierIndex] ?? null)
+                        : null;
+
                     $supplierRefIdx = $headerMap['primarysupplierreference'] ?? ($headerMap['supplier_reference'] ?? null);
                     $supplierRef    = $supplierRefIdx !== null ? trim((string) ($row[$supplierRefIdx] ?? '')) : null;
+
+                    $obsoleteIdx = $headerMap['obsolete'] ?? null;
+                    $rawObsolete = $obsoleteIdx !== null ? ($row[$obsoleteIdx] ?? null) : null;
+                    $obsolete    = $obsoleteIdx !== null ? $this->toDateOrNull($rawObsolete) : null;
+
+                    $rawObsoleteHasValue = $obsoleteIdx !== null
+                        && $rawObsolete !== null
+                        && (!is_string($rawObsolete) || trim($rawObsolete) !== '');
+
+                    if ($rawObsoleteHasValue && $obsolete === null) {
+                        $errorCount++;
+                        \Illuminate\Support\Facades\Log::warning(
+                            'ERP import skipped row ' . ($rowIndex + 2)
+                            . ': invalid Obsolete date.'
+                        );
+                        continue;
+                    }
 
                     $costFromDateIdx = $headerMap['costfromdate'] ?? ($headerMap['cost_from_date'] ?? null);
                     $costToDateIdx   = $headerMap['costtodate'] ?? ($headerMap['cost_to_date'] ?? null);
@@ -2436,6 +3403,9 @@ class AdminController extends Controller
                     // Never erase a known relationship because of one malformed/unmapped ERP row.
                     // Known official mappings still overwrite the old values normally.
                     if ($existing) {
+                        if ($supplierId === null) {
+                            $supplierId = $existing->supplier_id;
+                        }
                         if ($categoryId === null) {
                             $categoryId = $existing->category_id;
                         }
@@ -2449,6 +3419,12 @@ class AdminController extends Controller
                             $storageType = $existing->storage_type;
                         }
                     }
+
+                    $effectiveObsolete = $obsoleteIdx !== null
+                        ? $obsolete
+                        : ($existing ? $existing->obsolete : null);
+
+                    $obsoleteExpired = Product::isObsoleteDateExpired($effectiveObsolete);
 
                     // Special Price Rule:
                     // If PriceList != 'STD' and ToDate is a normal date (year != 9999),
@@ -2465,6 +3441,7 @@ class AdminController extends Controller
 
                     $payload = [
                         'navsa_product_code'    => $navsaProductCode,
+                        'supplier_id'           => $supplierId,
                         'category_id'           => $categoryId,
                         'sub_category_id'       => $subCategoryId,
                         'brand_id'              => $brandId,
@@ -2477,10 +3454,8 @@ class AdminController extends Controller
                         'barcode_case'          => $barcodeCase ?: null,
                         'group_desc'            => $groupDesc ?: null,
                         'storage_type'          => $storageType,
-                        'vat_code'              => $vatCode ?: null,
                         'layer_quantity'        => $layerQty,
                         'pallet_quantity'       => $palletQty,
-                        'supplier_reference'    => $supplierRef ?: null,
                         'cost'                  => $cost,
                         'cost_from_date'        => $costFromDate,
                         'cost_to_date'          => $costToDate,
@@ -2501,13 +3476,31 @@ class AdminController extends Controller
                         'web_short_description' => $webShort ?: null,
                         'web_long_description'  => $webLong ?: null,
                         'web_image'             => $webImage ?: null,
-                        'live_for_web'          => $liveForWeb,
+                        'live_for_web'          => $obsoleteExpired ? 0 : $liveForWeb,
 
-                        // The uploaded ERP/Step 1 file is authoritative for catalogue membership.
-                        // If a matching product was previously moved to Deleted Items, importing
-                        // that product again automatically restores it to the active catalogue.
-                        'deleted'               => false,
+                        // The ERP file may restore an ordinary soft-deleted product,
+                        // but a completed Obsolete date always wins.
+                        'deleted'               => $obsoleteExpired,
                     ];
+
+                    if ($vatCodeIdx !== null) {
+                        $payload['vat_code'] = $vatCode;
+                    }
+
+                    if ($supplierIndexIdx !== null) {
+                        $payload['primary_supplier_index'] = $supplierIndex !== '' ? $supplierIndex : null;
+                    }
+
+                    if ($supplierRefIdx !== null) {
+                        $payload['supplier_reference'] = $supplierRef ?: null;
+                    }
+
+                    if ($obsoleteIdx !== null) {
+                        $payload['obsolete'] = $obsolete;
+                    }
+                    
+                    $payload['deleted']               = false;
+                    
 
                     if ($isNormalToDatePromoRow && $promotionPrice !== null) {
                         $payload['is_offer'] = 1;
@@ -2537,6 +3530,9 @@ class AdminController extends Controller
                     $errorCount++;
                 }
             }
+
+            // Final safety pass; already-expired Obsolete dates are moved now.
+            Product::expireObsoleteProducts();
 
             return response()->json([
                 'success' => true,

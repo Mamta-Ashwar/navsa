@@ -3,11 +3,164 @@ import {
   softDeleteProduct, hardDeleteProduct, restoreProduct, updateProduct, createProduct, uploadErpExcel, uploadProductImage, selectProductImage, removeProductImage,
   bulkHideProducts, bulkShowProducts, bulkSoftDeleteProducts, bulkRestoreProducts, bulkHardDeleteProducts
 } from '../../services/adminApi'
-import { getBrands, getCategories } from '../../services/adminApi'
+import { getBrands, getCategories, getVatCodes } from '../../services/adminApi'
 import Barcode from 'react-barcode'
 import { Plus, Edit2, Trash2, Filter, Eye, EyeOff, RotateCcw, X, Upload, Printer, Download } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import ConfirmModal from '../../components/common/ConfirmModal'
+
+
+function isObsoleteDateExpired(value) {
+  if (!value) return false
+
+  const raw = String(value).trim()
+  let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  let year
+  let month
+  let day
+
+  if (match) {
+    year = Number(match[1])
+    month = Number(match[2])
+    day = Number(match[3])
+  } else {
+    match = raw.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/)
+    if (!match) return false
+
+    day = Number(match[1])
+    month = Number(match[2])
+    year = Number(match[3])
+  }
+
+  const obsoleteUtcDay = Date.UTC(year, month - 1, day)
+  const parsed = new Date(obsoleteUtcDay)
+
+  if (
+    Number.isNaN(obsoleteUtcDay) ||
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return false
+  }
+
+  const now = new Date()
+  const todayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate()
+  )
+
+  // The product remains valid through its Obsolete date.
+  // It becomes expired from the following UTC calendar day.
+  return obsoleteUtcDay < todayUtc
+}
+
+function formatObsoleteDateForTooltip(value) {
+  if (!value) return ''
+
+  const raw = String(value).trim()
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+
+  if (!match) return raw
+
+  return `${match[3]}-${match[2]}-${match[1]}`
+}
+
+
+function ExpiredRestoreControl({ obsolete }) {
+  const anchorRef = useRef(null)
+  const [tooltipPosition, setTooltipPosition] = useState(null)
+
+  const showTooltip = useCallback(() => {
+    const anchor = anchorRef.current
+    if (!anchor || typeof window === 'undefined') return
+
+    const rect = anchor.getBoundingClientRect()
+    const viewportPadding = 12
+    const width = Math.min(360, Math.max(260, window.innerWidth - (viewportPadding * 2)))
+    const left = Math.min(
+      Math.max(viewportPadding, rect.right - width),
+      Math.max(viewportPadding, window.innerWidth - width - viewportPadding)
+    )
+
+    // Prefer above the button. If there is not enough space, place it below.
+    const placeAbove = rect.top >= 175
+
+    setTooltipPosition(
+      placeAbove
+        ? {
+            left,
+            width,
+            bottom: Math.max(viewportPadding, window.innerHeight - rect.top + 10),
+            placement: 'above',
+          }
+        : {
+            left,
+            width,
+            top: Math.min(window.innerHeight - viewportPadding, rect.bottom + 10),
+            placement: 'below',
+          }
+    )
+  }, [])
+
+  const hideTooltip = useCallback(() => {
+    setTooltipPosition(null)
+  }, [])
+
+  return (
+    <span
+      ref={anchorRef}
+      className="expired-restore-control"
+      tabIndex={0}
+      onClick={(e) => e.stopPropagation()}
+      onMouseEnter={showTooltip}
+      onMouseLeave={hideTooltip}
+      onFocus={showTooltip}
+      onBlur={hideTooltip}
+    >
+      <button
+        type="button"
+        disabled
+        className="admin-btn admin-btn-ghost expired-restore-button"
+        aria-label="Expired product cannot be restored"
+      >
+        <RotateCcw size={15} />
+        <span className="expired-restore-label">Expired</span>
+      </button>
+
+      {tooltipPosition && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="expired-restore-tooltip-portal"
+              role="tooltip"
+              style={{
+                left: `${tooltipPosition.left}px`,
+                width: `${tooltipPosition.width}px`,
+                ...(tooltipPosition.placement === 'above'
+                  ? { bottom: `${tooltipPosition.bottom}px` }
+                  : { top: `${tooltipPosition.top}px` }),
+              }}
+            >
+              <div className="expired-tooltip-title">
+                ⚠ Restore blocked
+              </div>
+              <div className="expired-tooltip-date">
+                Obsolete date: {formatObsoleteDateForTooltip(obsolete)}
+              </div>
+              <div className="expired-tooltip-help">
+                This product has passed its Obsolete date and cannot be restored manually.
+                Update the ERP/Datafeed Obsolete date to a future date, then import the ERP file again.
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </span>
+  )
+}
+
 
 function ProductDetailModal({ product, onClose }) {
   const rows = [
@@ -239,32 +392,30 @@ const EXTRA_FIELDS = [
 ]
 
 const ADVANCED_FIELDS = [
-  { key: 'cost',               label: 'Cost (£)',           type: 'number' },
-  { key: 'cost_from_date',     label: 'Cost From Date',     type: 'date' },
-  { key: 'cost_to_date',       label: 'Cost To Date',       type: 'date' },
-  { key: 'vat_code',           label: 'VAT Code',           type: 'select', options: [
-    { value: 'A', label: 'A (20%)' },
-    { value: 'Z', label: 'Z (0%)' },
-  ] },
-  { key: 'storage_type',       label: 'Storage Type',       type: 'select', options: ['Ambient','Frozen','Chilled'] },
-  { key: 'supplier_reference', label: 'Supplier Reference', type: 'text' },
-  { key: 'obsolete',           label: 'Obsolete',           type: 'text' },
-  { key: 'group_desc',         label: 'Group Description',  type: 'text' },
-  { key: 'qty_desc',           label: 'Qty Description',    type: 'select', options: [
+  { key: 'cost',                  label: 'Cost (£)',                    type: 'number' },
+  { key: 'cost_from_date',        label: 'Cost From Date',              type: 'date' },
+  { key: 'cost_to_date',          label: 'Cost To Date',                type: 'date' },
+  { key: 'vat_code',              label: 'VAT Code',                    type: 'select', dynamicOptions: 'vatCodes' },
+  { key: 'storage_type',          label: 'Storage Type',                type: 'select', options: ['Ambient','Frozen','Chilled'] },
+  { key: 'group_desc',            label: 'Group Description',           type: 'text' },
+  { key: 'qty_desc',              label: 'Qty Description',             type: 'select', options: [
     { value: 'Case', label: 'Case' },
     { value: 'Layer', label: 'Layer' },
     { value: 'Pallet', label: 'Pallet' },
   ] },
-  { key: 'units_of',            label: 'Units Of',           type: 'text' },
-  { key: 'inner_case_quantity', label: 'InnerCaseQuantity',  type: 'number' },
-  { key: 'outer_case_quantity', label: 'OuterCaseQuantity',  type: 'number' },
-  { key: 'layer_quantity',      label: 'Layer Quantity',     type: 'number' },
-  { key: 'pallet_quantity',     label: 'Pallet Quantity',    type: 'number' },
-  { key: 'weight',              label: 'Unit Weight',        type: 'number' },
-  { key: 'volume',              label: 'Unit Volume',        type: 'number' },
-  { key: 'comm_code',           label: 'Comm Code',          type: 'text' },
-  { key: 'intra_country',       label: 'Intra Country',      type: 'text' },
-  { key: 'intra_type',          label: 'IntraType',           type: 'text' },
+  { key: 'units_of',              label: 'Units Of',                    type: 'text' },
+  { key: 'inner_case_quantity',   label: 'InnerCaseQuantity',           type: 'number' },
+  { key: 'outer_case_quantity',   label: 'OuterCaseQuantity',           type: 'number' },
+  { key: 'layer_quantity',        label: 'Layer Quantity',              type: 'number' },
+  { key: 'pallet_quantity',       label: 'Pallet Quantity',             type: 'number' },
+  { key: 'weight',                label: 'Unit Weight',                 type: 'number' },
+  { key: 'volume',                label: 'Unit Volume',                 type: 'number' },
+  { key: 'comm_code',             label: 'Comm Code',                   type: 'text' },
+  { key: 'intra_country',         label: 'Intra Country',               type: 'text' },
+  { key: 'intra_type',            label: 'IntraType',                    type: 'text' },
+  { key: 'primary_supplier_index',label: 'Primary Supplier Index',       type: 'text', readOnly: true },
+  { key: 'supplier_reference',    label: 'Primary Supplier Reference',   type: 'text', readOnly: true },
+  { key: 'obsolete',              label: 'Obsolete',                     type: 'date', readOnly: true },
 ]
 
 const WEBSITE_DESCRIPTION_FIELDS = [
@@ -751,6 +902,43 @@ function AdminProductImageTile({
   )
 }
 
+
+function formatVatPercentage(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return String(value ?? '')
+
+  return number
+    .toFixed(3)
+    .replace(/\.?0+$/, '')
+}
+
+function makeVatCodeOptions(vatCodes, currentValue = '') {
+  const options = (Array.isArray(vatCodes) ? vatCodes : [])
+    .map(vat => {
+      const code = String(vat?.code || '').trim().toUpperCase()
+      if (!code) return null
+
+      const percentage = formatVatPercentage(vat?.percentage)
+      const description = String(vat?.description || '').trim()
+
+      return {
+        value: code,
+        label: `${code} — ${percentage}%${description ? ` — ${description}` : ''}`,
+      }
+    })
+    .filter(Boolean)
+
+  const currentCode = String(currentValue || '').trim().toUpperCase()
+  if (currentCode && !options.some(option => option.value === currentCode)) {
+    options.unshift({
+      value: currentCode,
+      label: `${currentCode} — Current code (inactive or missing from VAT Codes table)`,
+    })
+  }
+
+  return options
+}
+
 function EditProductModal({ product, onClose, onSaved }) {
   const [form, setForm] = useState(() => {
     const currentRule = String(product?.order_qty_allowed || 'DEFAULT').toUpperCase()
@@ -777,6 +965,7 @@ function EditProductModal({ product, onClose, onSaved }) {
   const imageFileRef = useRef(null)
   const [allBrands,     setAllBrands]     = useState([])
   const [allCategories, setAllCategories] = useState([])
+  const [allVatCodes,   setAllVatCodes]   = useState([])
   const [catSearch,     setCatSearch]     = useState('')
   const [showCatDrop,   setShowCatDrop]   = useState(false)
 
@@ -791,6 +980,7 @@ function EditProductModal({ product, onClose, onSaved }) {
   useEffect(() => {
     getBrands().then(d => setAllBrands(d || [])).catch(() => {})
     getCategories().then(d => setAllCategories(d || [])).catch(() => {})
+    getVatCodes().then(d => setAllVatCodes(Array.isArray(d) ? d : [])).catch(() => setAllVatCodes([]))
 
     if (product && product.shelf_life) {
       const days = parseInt(product.shelf_life, 10)
@@ -1241,6 +1431,10 @@ function EditProductModal({ product, onClose, onSaved }) {
           ? normalizeQtyDescForDisplay(form[f.key])
           : (form[f.key] || '')
 
+        const fieldOptions = f.dynamicOptions === 'vatCodes'
+          ? makeVatCodeOptions(allVatCodes, selectValue)
+          : (Array.isArray(f.options) ? f.options : [])
+
         return (
           <Row key={f.key + f.label} label={f.label}>
             {f.type === 'textarea' ? (
@@ -1259,7 +1453,7 @@ function EditProductModal({ product, onClose, onSaved }) {
                 }}
               >
                 {!selectValue && <option value="">—</option>}
-                {f.options.map(o => {
+                {fieldOptions.map(o => {
                   const val = typeof o === 'object' ? o.value : o
                   const lbl = typeof o === 'object' ? o.label : o
                   return <option key={val} value={val}>{lbl}</option>
@@ -1269,14 +1463,15 @@ function EditProductModal({ product, onClose, onSaved }) {
               <input
                 type={f.type || 'text'}
                 value={fieldVal}
-                onChange={e => hc(f.key, e.target.value)}
-                disabled={isBbd}
+                onChange={e => { if (!isReadOnly && !isBbd) hc(f.key, e.target.value) }}
+                disabled={isBbd || isReadOnly}
+                title={isReadOnly ? 'ERP-controlled value from the Datafeed.' : undefined}
                 style={{
                   ...inp,
                   maxWidth: f.type === 'number' ? '200px' : '100%',
-                  background: isBbd ? '#f3f4f6' : '#fff',
-                  color: isBbd ? '#6b7280' : '#333',
-                  cursor: isBbd ? 'not-allowed' : 'text'
+                  background: (isBbd || isReadOnly) ? '#f3f4f6' : '#fff',
+                  color: (isBbd || isReadOnly) ? '#6b7280' : '#333',
+                  cursor: (isBbd || isReadOnly) ? 'not-allowed' : 'text'
                 }}
               />
             )}
@@ -1368,7 +1563,7 @@ function ErpImportModal({ onClose, onImportDone, mode = 'erp' }) {
   const modalTitle = isStep1 ? 'Step 1 Converted Excel Import' : 'Bulk ERP Excel Import'
   const modalSubtitle = isStep1
     ? 'Upload Step 1 data. A minimal file may contain only NAVSA Product Code/Reference, Description and ORDER QTY ALLOWED.'
-    : 'Upload your ERP system file. If ORDER QTY ALLOWED is included, blank = DEFAULT; PALLET and CASE are applied per NAVSA Product Code.'
+    : 'Upload the ERP Datafeed. Primary Supplier Index, Primary Supplier Reference and Obsolete are synced automatically; ORDER QTY ALLOWED is applied when that column is present.'
   const accentGradient = isStep1 ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'linear-gradient(135deg,#10b981,#059669)'
   const accentColor = isStep1 ? '#3b82f6' : '#10b981'
 
@@ -1834,6 +2029,97 @@ export default function AdminProducts() {
 
   return (
     <div>
+      <style>{`
+        .expired-restore-control {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .expired-restore-button {
+          display: inline-flex !important;
+          align-items: center;
+          gap: 6px;
+          min-width: 86px;
+          justify-content: center;
+          color: #fca5a5 !important;
+          background: rgba(239, 68, 68, 0.10) !important;
+          border: 1px solid rgba(248, 113, 113, 0.38) !important;
+          border-radius: 9px !important;
+          opacity: 1 !important;
+          filter: none !important;
+          cursor: not-allowed !important;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+
+        .expired-restore-button svg {
+          color: #fb7185;
+          flex: 0 0 auto;
+        }
+
+        .expired-restore-label {
+          color: #fecaca;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+          line-height: 1;
+        }
+
+        .expired-restore-tooltip-portal {
+          position: fixed;
+          z-index: 100000;
+          padding: 14px 15px;
+          border-radius: 12px;
+          box-sizing: border-box;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: normal;
+          background:
+            linear-gradient(180deg, rgba(54, 14, 23, 0.99), rgba(28, 12, 18, 0.99));
+          border: 1px solid rgba(251, 113, 133, 0.46);
+          box-shadow:
+            0 18px 42px rgba(0,0,0,0.48),
+            0 0 0 1px rgba(255,255,255,0.035) inset;
+          color: #ffe4e6;
+          text-align: left;
+          pointer-events: none;
+        }
+
+        .expired-tooltip-title {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          margin-bottom: 8px;
+          width: 100%;
+          color: #fda4af;
+          font-size: 12px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .expired-tooltip-date {
+          display: block;
+          width: 100%;
+          margin-bottom: 7px;
+          color: #fff1f2;
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 1.4;
+        }
+
+        .expired-tooltip-help {
+          display: block;
+          width: 100%;
+          color: #fecdd3;
+          font-size: 12px;
+          line-height: 1.5;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+      `}</style>
+
       <ConfirmModal
         open={confirmDialog.open}
         title={
@@ -2138,20 +2424,25 @@ export default function AdminProducts() {
                   <th style={{ width: '110px', textAlign: 'center' }}>New Arrivals</th>
                   <th style={{ width: '90px', textAlign: 'center' }}>WIGIG</th>
                   <th style={{ width: '100px', textAlign: 'center' }}>Best-Sellers</th>
-                  <th style={{ width: '140px', textAlign: 'right', paddingRight: '1rem' }}>Actions</th>
+                  <th style={{ width: '190px', textAlign: 'right', paddingRight: '1rem' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.data?.map(p => {
                   const rowSelected = isRowSelected(p.id)
+                  const obsoleteExpired = Boolean(p.deleted) && isObsoleteDateExpired(p.obsolete)
 
                   return (
                   <tr
                     key={p.id}
                     style={{
-                      opacity: p.deleted ? 0.5 : 1,
+                      opacity: 1,
                       cursor:'pointer',
-                      background: rowSelected ? 'rgba(59,130,246,0.08)' : undefined,
+                      background: rowSelected
+                        ? 'rgba(59,130,246,0.08)'
+                        : p.deleted
+                          ? 'rgba(15,23,42,0.18)'
+                          : undefined,
                     }}
                     onClick={() => setDetailModal(p)}
                   >
@@ -2251,18 +2542,26 @@ export default function AdminProducts() {
                           </>
                         ) : (
                           <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                requestProductAction(p, 'restore')
-                              }}
-                              className="admin-btn admin-btn-ghost"
-                              style={{ padding: '0.5rem', color: '#10b981' }}
-                              title="Restore product as live"
-                              aria-label="Restore product"
-                            >
-                              <RotateCcw size={16} />
-                            </button>
+                            {obsoleteExpired ? (
+                              <ExpiredRestoreControl obsolete={p.obsolete} />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  requestProductAction(p, 'restore')
+                                }}
+                                className="admin-btn admin-btn-ghost"
+                                style={{
+                                  padding: '0.5rem',
+                                  color: '#10b981',
+                                }}
+                                title="Restore product as live"
+                                aria-label="Restore product"
+                              >
+                                <RotateCcw size={16} />
+                              </button>
+                            )}
 
                             <button
                               onClick={(e) => {

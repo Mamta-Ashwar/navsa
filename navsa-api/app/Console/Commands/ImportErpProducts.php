@@ -91,6 +91,19 @@ class ImportErpProducts extends Command
 
         $barcodeEanCol = $headerMap['barcodeean'] ?? $headerMap['barcode_ean'] ?? 7;
         $liveForWebCol = $headerMap['liveforweb'] ?? $headerMap['live_for_web'] ?? 31;
+        $primarySupplierIndexCol = $headerMap['primarysupplierindex'] ?? 0;
+        $primarySupplierReferenceCol = $headerMap['primarysupplierreference'] ?? 13;
+        $obsoleteCol = $headerMap['obsolete'] ?? 33;
+
+        $vatCodeCol = $headerMap['vatcode'] ?? ($headerMap['vat_code'] ?? null);
+
+        $validVatCodes = DB::table('vat_codes')
+            ->where('active', 1)
+            ->pluck('code')
+            ->map(fn ($code) => strtoupper(trim((string) $code)))
+            ->filter()
+            ->values()
+            ->all();
 
         if ($codeCol === null) {
             $bar->finish();
@@ -175,9 +188,11 @@ class ImportErpProducts extends Command
                         continue;
                     }
 
+                    // Step 1 changes ORDER QTY ALLOWED only.
+                    // It must never resurrect a product that was deleted manually
+                    // or automatically because its Obsolete date has passed.
                     $updates = [
                         'order_qty_allowed' => $orderQtyAllowed,
-                        'deleted' => false,
                     ];
 
                     if ($description !== '') {
@@ -209,7 +224,7 @@ class ImportErpProducts extends Command
 
         foreach ($rows as $rowIndex => $row) {
             try {
-                $supplierIndex    = trim((string) ($row[0] ?? ''));
+                $supplierIndex    = trim((string) ($row[$primarySupplierIndexCol] ?? ''));
                 $navsaProductCode = trim((string) ($row[$codeCol] ?? $row[1] ?? ''));
                 $description      = trim((string) ($row[2] ?? ''));
                 $unitsOf          = trim((string) ($row[3] ?? ''));
@@ -236,10 +251,26 @@ class ImportErpProducts extends Command
                 $barcodeEan       = trim((string) ($row[$barcodeEanCol] ?? ''));
                 $barcodeCase      = trim((string) ($row[8] ?? ''));
                 $groupDesc        = trim((string) ($row[9] ?? ''));
-                $vatCode          = trim((string) ($row[10] ?? ''));
+                $rawVat = $vatCodeCol !== null
+                    ? strtoupper(trim((string) ($row[$vatCodeCol] ?? '')))
+                    : '';
+
+                $vatCode = $rawVat !== '' ? $rawVat : null;
+
+                if ($vatCode !== null && !in_array($vatCode, $validVatCodes, true)) {
+                    $errors++;
+                    $this->newLine();
+                    $this->error(
+                        'Row ' . ($rowIndex + 2)
+                        . ": unknown/inactive VAT code '{$vatCode}'. "
+                        . 'Add/activate the code in vat_codes or correct the ERP VatCode value.'
+                    );
+                    $bar->advance();
+                    continue;
+                }
                 $layerQty         = $this->toNumberOrNull($row[11] ?? null);
                 $palletQty        = $this->toNumberOrNull($row[12] ?? null);
-                $supplierRef      = trim((string) ($row[13] ?? ''));
+                $supplierRef      = trim((string) ($row[$primarySupplierReferenceCol] ?? ''));
                 $cost             = $this->toNumberOrNull($row[14] ?? null);
                 $costFromDate     = $this->toDateOrNull($row[15] ?? null);
                 $costToDate       = $this->toDateOrNull($row[16] ?? null);
@@ -259,6 +290,29 @@ class ImportErpProducts extends Command
                 $webImage         = trim((string) ($row[30] ?? ''));
                 $liveForWeb       = $this->toBoolean01($row[$liveForWebCol] ?? 0);
                 $encoreImage      = trim((string) ($row[32] ?? ''));
+
+                $rawObsolete = $row[$obsoleteCol] ?? null;
+                $obsolete = $this->toDateOrNull($rawObsolete);
+
+                $rawObsoleteHasValue = $rawObsolete !== null
+                    && (!is_string($rawObsolete) || trim($rawObsolete) !== '');
+
+                if ($rawObsoleteHasValue && $obsolete === null) {
+                    $errors++;
+                    $this->newLine();
+                    $this->error(
+                        'Row ' . ($rowIndex + 2)
+                        . ' skipped: invalid Obsolete date. Use a valid Excel date or date value.'
+                    );
+                    $bar->advance();
+                    continue;
+                }
+
+                // "After completion of the Obsolete date" means that a product
+                // dated 2026-08-14 remains active on 2026-08-14 and becomes
+                // obsolete from 2026-08-15 onward (Europe/London business date).
+                $todayLondon = now('Europe/London')->toDateString();
+                $obsoleteExpired = $obsolete !== null && $obsolete < $todayLondon;
 
                 if (empty($description) && empty($navsaProductCode)) {
                     $skipped++;
@@ -335,6 +389,7 @@ class ImportErpProducts extends Command
                 $payload = [
                     'navsa_product_code'    => $navsaProductCode,
                     'supplier_id'           => $supplierId,
+                    'primary_supplier_index'=> $supplierIndex ?: null,
                     'category_id'           => $categoryId,
                     'sub_category_id'       => $subCategoryId,
                     'brand_id'              => $brandId,
@@ -347,7 +402,6 @@ class ImportErpProducts extends Command
                     'barcode_case'          => $barcodeCase ?: null,
                     'group_desc'            => $groupDesc ?: null,
                     'storage_type'          => $storageType,
-                    'vat_code'              => $vatCode ?: null,
                     'layer_quantity'        => $layerQty,
                     'pallet_quantity'       => $palletQty,
                     'supplier_reference'    => $supplierRef ?: null,
@@ -368,18 +422,23 @@ class ImportErpProducts extends Command
                     'web_short_description' => $webShortDesc ?: null,
                     'web_long_description'  => $webLongDesc ?: null,
                     'web_image'             => $webImage ?: null,
-                    'live_for_web'          => $liveForWeb,
+                    'live_for_web'          => $obsoleteExpired ? 0 : $liveForWeb,
                     'encore_image'          => $encoreImage ?: null,
-                    'obsolete'              => null,
+                    'obsolete'              => $obsolete,
 
-                    // A product present in the ERP file belongs in the active catalogue.
-                    // Re-importing therefore restores any matching soft-deleted product.
-                    'deleted'               => false,
+                    // An expired Obsolete date always wins over LiveForWeb.
+                    // Otherwise a product present in the ERP file is restored to
+                    // the active catalogue, preserving the existing ERP behaviour.
+                    'deleted'               => $obsoleteExpired,
                 ];
 
                 // ORDER QTY ALLOWED is independent from QtyDesc.
                 // If the ERP workbook does not contain the column, preserve the
                 // existing database value (new products use the DB DEFAULT).
+                if ($vatCodeCol !== null) {
+                    $payload['vat_code'] = $vatCode;
+                }
+
                 if ($orderQtyAllowedCol !== null) {
                     $payload['order_qty_allowed'] = $orderQtyAllowed;
                 }
