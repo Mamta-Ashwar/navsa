@@ -377,10 +377,80 @@ function BecomeSupplier() {
     }
   };
 
+  const triggerFieldBlinkAndScroll = (targetElement) => {
+    if (!targetElement) return;
+
+    targetElement.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    });
+
+    targetElement.classList.remove('invalid-blink');
+    void targetElement.offsetWidth;
+    targetElement.classList.add('invalid-blink');
+
+    const inputToFocus =
+      targetElement.tagName === 'INPUT' ||
+      targetElement.tagName === 'SELECT' ||
+      targetElement.tagName === 'TEXTAREA'
+        ? targetElement
+        : targetElement.querySelector('input, select, textarea');
+
+    if (inputToFocus) {
+      try {
+        inputToFocus.focus({ preventScroll: true });
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    setTimeout(() => {
+      targetElement.classList.remove('invalid-blink');
+    }, 2800);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.first_name.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="first_name"]'));
+      return;
+    }
+    if (!formData.last_name.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="last_name"]'));
+      return;
+    }
+    if (!formData.email.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="email"]'));
+      return;
+    }
+    if (!formData.company_name.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="company_name"]'));
+      return;
+    }
+    if (!formData.address_line_1.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="address_line_1"]'));
+      return;
+    }
+    if (!formData.city.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="city"]'));
+      return;
+    }
+    if (!formData.county.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="county"]'));
+      return;
+    }
+    if (!formData.country) {
+      triggerFieldBlinkAndScroll(document.querySelector('select[name="country"]'));
+      return;
+    }
+    if (!formData.postcode.trim()) {
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="postcode"]'));
+      return;
+    }
     if (!formData.terms_accepted) {
-      alert("Please agree to the Terms & Conditions.");
+      triggerFieldBlinkAndScroll(document.querySelector('input[name="terms_accepted"]')?.closest('.checkbox-full'));
       return;
     }
 
@@ -458,7 +528,7 @@ function BecomeSupplier() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="supplier-form" autoComplete="off">
+        <form noValidate onSubmit={handleSubmit} className="supplier-form" autoComplete="off">
           <div className="supplier-autofill-guard" aria-hidden="true">
             <input type="text" name="supplier_autofill_username_guard" autoComplete="username" tabIndex={-1} />
             <input type="password" name="supplier_autofill_password_guard" autoComplete="new-password" tabIndex={-1} />

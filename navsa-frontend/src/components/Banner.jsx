@@ -117,14 +117,28 @@ function normaliseBannerPayload(payload) {
     .sort((a, b) => a.sort_order - b.sort_order)
 }
 
-function BannerContent({ banner, onLoad }) {
+function BannerContent({ banner, onLoad, type = 'hero', index = 0 }) {
+  const fallbackImg = `/banners/${type}-${(index % 3) + 1}.jpg`
+  const [imgSrc, setImgSrc] = useState(banner.image || fallbackImg)
+
+  useEffect(() => {
+    setImgSrc(banner.image || fallbackImg)
+  }, [banner.image, fallbackImg])
+
+  const handleImageError = () => {
+    if (imgSrc !== fallbackImg) {
+      setImgSrc(fallbackImg)
+    }
+  }
+
   const content = (
     <>
       <img
-        src={banner.image}
+        src={imgSrc}
         alt={banner.brand_name ? `${banner.brand_name} promotional banner` : 'NAVSA promotional banner'}
         draggable={false}
         onLoad={onLoad}
+        onError={handleImageError}
       />
 
       {banner.link && banner.button_text && (
@@ -220,6 +234,8 @@ function BannerSlider({ banners, type }) {
           >
             <BannerContent
               banner={banner}
+              type={type}
+              index={index}
               onLoad={event => handleImageLoad(event, banner.id)}
             />
           </div>

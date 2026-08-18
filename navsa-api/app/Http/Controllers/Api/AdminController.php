@@ -11,6 +11,8 @@ use App\Models\SubCategory;
 use App\Models\User;
 use App\Models\Pdf;
 use App\Models\HomeBanner;
+use App\Models\Order;
+use App\Models\OrderItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
@@ -267,6 +269,22 @@ class AdminController extends Controller
     public function products(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
+
+        // Auto-expire offers/promotions whose to_date has passed
+        $today = now()->toDateString();
+        Product::where(function ($q) {
+            $q->where('is_offer', 1)
+              ->orWhere('is_new_arrival', 1)
+              ->orWhere('is_best_offer', 1);
+        })
+        ->whereNotNull('to_date')
+        ->where('to_date', '<', $today)
+        ->update([
+            'is_offer' => 0,
+            'is_new_arrival' => 0,
+            'is_best_offer' => 0,
+            'offer_label' => null,
+        ]);
 
         $q = Product::with(['brand', 'category']);
 
@@ -835,9 +853,12 @@ class AdminController extends Controller
         $new = $product->is_offer ? 0 : 1;
         $data = ['is_offer' => $new];
         if ($request->filled('offer_label')) $data['offer_label'] = $request->offer_label;
+        if ($request->has('promotion_price')) $data['promotion_price'] = $request->promotion_price ?: null;
+        if ($request->has('from_date')) $data['from_date'] = $request->from_date ?: null;
+        if ($request->has('to_date')) $data['to_date'] = $request->to_date ?: null;
         if (!$new) $data['offer_label'] = null; // Clear label when removing offer
         $product->update($data);
-        return response()->json(['id' => $id, 'is_offer' => $new, 'offer_label' => $product->offer_label]);
+        return response()->json($product->fresh());
     }
 
     public function clearOffers(Request $request)
@@ -852,8 +873,12 @@ class AdminController extends Controller
         if (!$this->auth($request)) return $this->deny();
         $product = Product::findOrFail($id);
         $new = $product->is_best_offer ? 0 : 1;
-        $product->update(['is_best_offer' => $new]);
-        return response()->json(['id' => $id, 'is_best_offer' => $new]);
+        $data = ['is_best_offer' => $new];
+        if ($request->has('promotion_price')) $data['promotion_price'] = $request->promotion_price ?: null;
+        if ($request->has('from_date')) $data['from_date'] = $request->from_date ?: null;
+        if ($request->has('to_date')) $data['to_date'] = $request->to_date ?: null;
+        $product->update($data);
+        return response()->json($product->fresh());
     }
 
     public function toggleNewArrival(Request $request, $id)
@@ -861,8 +886,12 @@ class AdminController extends Controller
         if (!$this->auth($request)) return $this->deny();
         $product = Product::findOrFail($id);
         $new = $product->is_new_arrival ? 0 : 1;
-        $product->update(['is_new_arrival' => $new]);
-        return response()->json(['id' => $id, 'is_new_arrival' => $new]);
+        $data = ['is_new_arrival' => $new];
+        if ($request->has('promotion_price')) $data['promotion_price'] = $request->promotion_price ?: null;
+        if ($request->has('from_date')) $data['from_date'] = $request->from_date ?: null;
+        if ($request->has('to_date')) $data['to_date'] = $request->to_date ?: null;
+        $product->update($data);
+        return response()->json($product->fresh());
     }
 
     public function updateStock(Request $request, $id)
@@ -2142,6 +2171,72 @@ class AdminController extends Controller
                 }
             }
 
+            // Pre-validation check:
+            // Any row with PriceList != 'STD' and ToDate is a normal date (year != 9999)
+            // MUST already exist in the database. If not, reject the file and return error.
+            $unmatchedPromotions = [];
+            $codeHeaderIdx = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? null);
+            $descHeaderIdx = $headerMap['description'] ?? ($headerMap['webshortdescription'] ?? null);
+            $priceListHIdx = $headerMap['pricelist'] ?? ($headerMap['price_list'] ?? null);
+            $toDateHIdx    = $headerMap['todate'] ?? ($headerMap['to_date'] ?? null);
+
+            foreach ($rows as $rowIndex => $row) {
+                $navsaProductCode = $codeHeaderIdx !== null ? trim((string) ($row[$codeHeaderIdx] ?? '')) : '';
+                $description      = $descHeaderIdx !== null ? trim((string) ($row[$descHeaderIdx] ?? '')) : '';
+
+                if (empty($description) && empty($navsaProductCode)) {
+                    continue;
+                }
+
+                $priceListRaw   = $priceListHIdx !== null ? trim((string) ($row[$priceListHIdx] ?? '')) : '';
+                $priceListUpper = strtoupper($priceListRaw);
+
+                $rawToDate = $toDateHIdx !== null ? ($row[$toDateHIdx] ?? null) : null;
+                $toDateVal = $rawToDate !== null ? $this->toDateOrNull($rawToDate) : null;
+                $toYear    = $toDateVal ? (int) date('Y', strtotime($toDateVal)) : null;
+
+                // Condition: PriceList is NOT 'STD' AND ToDate is a normal date (year != 9999)
+                $isNormalToDatePromo = ($priceListUpper !== '' && $priceListUpper !== 'STD') && ($toYear !== null && $toYear !== 9999);
+
+                if ($isNormalToDatePromo) {
+                    $matchKey = !empty($navsaProductCode)
+                        ? ['navsa_product_code' => $navsaProductCode]
+                        : ['description' => $description];
+
+                    $exists = Product::where($matchKey)->exists();
+                    if (!$exists) {
+                        $unmatchedPromotions[] = [
+                            'row'        => $rowIndex + 2,
+                            'code'       => $navsaProductCode,
+                            'desc'       => $description,
+                            'price_list' => $priceListRaw,
+                            'to_date'    => $toDateVal,
+                        ];
+                    }
+                }
+            }
+
+            if (!empty($unmatchedPromotions)) {
+                $totalUnmatched = count($unmatchedPromotions);
+                $formattedRows = array_map(function ($item) {
+                    $identifier = !empty($item['code']) ? "Code: {$item['code']}" : "Desc: {$item['desc']}";
+                    return "Row {$item['row']} ({$identifier}, PriceList: {$item['price_list']}, ToDate: {$item['to_date']})";
+                }, $unmatchedPromotions);
+
+                $previewText = implode(', ', array_slice($formattedRows, 0, 15));
+                if ($totalUnmatched > 15) {
+                    $previewText .= ' and ' . ($totalUnmatched - 15) . ' more...';
+                }
+
+                $msg = "Promotional products (with PriceList != STD and normal ToDate) can ONLY be updated if the product already exists in the database.\n\nFound {$totalUnmatched} promotional row(s) for product(s) NOT in database:\n{$previewText}\n\nPlease add these base products to the database first before importing promotion prices.";
+
+                return response()->json([
+                    'error' => $msg,
+                    'message' => $msg,
+                    'unmatched_promotional_rows' => $unmatchedPromotions,
+                ], 422);
+            }
+
             foreach ($rows as $rowIndex => $row) {
                 try {
                     $codeIdx  = $headerMap['navsa product code'] ?? ($headerMap['reference'] ?? null);
@@ -2249,6 +2344,9 @@ class AdminController extends Controller
                     $fromDate       = $fromDateIdx !== null ? $this->toDateOrNull($row[$fromDateIdx] ?? null) : null;
                     $toDate         = $toDateIdx !== null ? $this->toDateOrNull($row[$toDateIdx] ?? null) : null;
 
+                    $priceListUpper = $priceList !== null ? strtoupper(trim($priceList)) : '';
+                    $toYear = $toDate ? (int) date('Y', strtotime($toDate)) : null;
+
                     $commCodeIdx     = $headerMap['commcode'] ?? ($headerMap['comm_code'] ?? null);
                     $intraCountryIdx = $headerMap['intracountry'] ?? ($headerMap['intra_country'] ?? null);
                     $intraTypeIdx    = $headerMap['intratype'] ?? ($headerMap['intra_type'] ?? null);
@@ -2352,6 +2450,19 @@ class AdminController extends Controller
                         }
                     }
 
+                    // Special Price Rule:
+                    // If PriceList != 'STD' and ToDate is a normal date (year != 9999),
+                    // then the value in the Excel 'Price' column is the promotion_price!
+                    $isNormalToDatePromoRow = ($priceListUpper !== '' && $priceListUpper !== 'STD') && ($toYear !== null && $toYear !== 9999);
+                    if ($isNormalToDatePromoRow) {
+                        if ($price !== null) {
+                            $promotionPrice = $price;
+                        }
+                        if ($existing) {
+                            $price = $existing->price;
+                        }
+                    }
+
                     $payload = [
                         'navsa_product_code'    => $navsaProductCode,
                         'category_id'           => $categoryId,
@@ -2397,6 +2508,13 @@ class AdminController extends Controller
                         // that product again automatically restores it to the active catalogue.
                         'deleted'               => false,
                     ];
+
+                    if ($isNormalToDatePromoRow && $promotionPrice !== null) {
+                        $payload['is_offer'] = 1;
+                        if (!empty($priceList)) {
+                            $payload['offer_label'] = $priceList;
+                        }
+                    }
 
                     if ($hasOrderQtyAllowed && $orderQtyAllowedIdx !== null) {
                         $payload['order_qty_allowed'] = $orderQtyAllowed;
@@ -2681,6 +2799,74 @@ class AdminController extends Controller
             'message' => 'User roles updated successfully',
             'roles' => $user->getRoleNames(),
             'permissions' => $user->getAllPermissions()->pluck('name')
+        ]);
+    }
+
+    public function orders(Request $request)
+    {
+        $query = Order::with(['user.customerDetail', 'items.product'])->orderBy('created_at', 'desc');
+
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('order_number', 'like', "%{$search}%")
+                  ->orWhereHas('user', function ($uq) use ($search) {
+                      $uq->where('name', 'like', "%{$search}%")
+                         ->orWhere('email', 'like', "%{$search}%")
+                         ->orWhere('company_name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $orders = $query->paginate($perPage);
+
+        $totalRevenue = (float) Order::whereIn('status', ['completed', 'delivered'])
+            ->with('items')
+            ->get()
+            ->sum(function ($order) {
+                $orderTotal = (float) ($order->total_amount ?? 0);
+                if ($orderTotal > 0) {
+                    return $orderTotal;
+                }
+                return (float) $order->items->sum('subtotal');
+            });
+
+        $stats = [
+            'total_orders' => Order::count(),
+            'processing_orders' => Order::whereIn('status', ['processing', 'pending'])->count(),
+            'completed_orders' => Order::whereIn('status', ['completed', 'delivered'])->count(),
+            'total_revenue' => $totalRevenue,
+        ];
+
+        return response()->json([
+            'orders' => $orders,
+            'stats' => $stats,
+        ]);
+    }
+
+    public function showOrder($id)
+    {
+        $order = Order::with(['user.customerDetail', 'items.product'])->findOrFail($id);
+        return response()->json($order);
+    }
+
+    public function updateOrderStatus(Request $request, $id)
+    {
+        $order = Order::findOrFail($id);
+        $validated = $request->validate([
+            'status' => 'required|string',
+        ]);
+        $order->status = $validated['status'];
+        $order->save();
+
+        return response()->json([
+            'message' => 'Order status updated successfully',
+            'order' => $order->load(['user', 'items.product']),
         ]);
     }
 }

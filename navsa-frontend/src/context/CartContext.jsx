@@ -257,6 +257,26 @@ export function CartProvider({ children }) {
     )
   }
 
+  function reorderItems(items = []) {
+    if (!Array.isArray(items)) return;
+
+    items.forEach(item => {
+      addToBasket(
+        {
+          id: item.id || item.product_id,
+          navsa_product_code: item.navsa_product_code || item.reference,
+          description: item.description || item.product_name || 'Product',
+          price: Number(item.price || 0),
+          web_image: item.web_image,
+          brand_name: item.brand_name || '',
+          storage_type: item.storage_type || 'Ambient',
+          units_of: item.units_per_case || item.units_of || 1,
+        },
+        { caseQty: Math.max(1, Number(item.case_quantity || item.quantity || 1)) }
+      )
+    })
+  }
+
   function clearBasket() {
     setBasketItems([])
   }
@@ -311,6 +331,7 @@ export function CartProvider({ children }) {
         removeByStorageType,
         removeAmbientAndChilled,
         clearBasket,
+        reorderItems,
         addToWishlist,
         removeFromWishlist,
         isInWishlist,

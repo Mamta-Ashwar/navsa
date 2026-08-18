@@ -14,6 +14,7 @@ import './ProductCardFinal.css'
 
 import { getProductImageUrl } from '../utils/imageHelper'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
+import { useAuth } from '../context/AuthContext'
 
 function getImage(product) {
   return getProductImageUrl(product?.web_image)
@@ -64,6 +65,73 @@ function ProductImagePlaceholder({ compact = false }) {
   )
 }
 
+function getCardBannerConfig(product, customBadge) {
+  const rawList = String(product?.price_list || product?.offer_label || customBadge || '').trim().toUpperCase()
+
+  let type = null
+  let title = ''
+  let bg = '#0e9f6e'
+  let showEndDate = false
+  let showStartDate = false
+
+  if (rawList.includes('EDLP') || rawList.includes('EVERY DAY')) {
+    type = 'EDLP'
+    title = 'Every Day Low Price'
+    bg = '#0e9f6e'
+  } else if (rawList.includes('PRESELL')) {
+    type = 'PRESELL'
+    title = 'Presell'
+    bg = '#6366f1'
+    showStartDate = true // Show Start Date badge for Presell!
+  } else if (rawList.includes('MONTHLY') || rawList.includes('MONTHLY PROMOTION')) {
+    type = 'MONTHLY'
+    title = 'Monthly Promotion'
+    bg = '#00b4d8'
+    showEndDate = true
+  } else if (rawList.includes('CLEARANCE')) {
+    type = 'CLEARANCE'
+    title = 'Clearance'
+    bg = '#ea580c'
+  } else if (rawList.includes('NEW') || product?.is_new_arrival) {
+    type = 'NEW'
+    title = 'New Arrival'
+    bg = '#2563eb'
+  }
+  // Best Seller and WIGIG have NO top banner (title stays '')
+
+  let dateLabel = ''
+  let dateDayMonth = ''
+  let dateYear = ''
+
+  if (showEndDate) {
+    const rawDate = product?.to_date || product?.promotion_finish_date
+    if (rawDate) {
+      const dateObj = new Date(rawDate)
+      if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() !== 9999) {
+        dateLabel = 'Ends'
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        const month = dateObj.toLocaleString('en-US', { month: 'short' })
+        dateDayMonth = `${day} ${month}`
+        dateYear = String(dateObj.getFullYear())
+      }
+    }
+  } else if (showStartDate) {
+    const rawDate = product?.from_date || product?.promotion_start_date
+    if (rawDate) {
+      const dateObj = new Date(rawDate)
+      if (!isNaN(dateObj.getTime())) {
+        dateLabel = 'Starts'
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        const month = dateObj.toLocaleString('en-US', { month: 'short' })
+        dateDayMonth = `${day} ${month}`
+        dateYear = String(dateObj.getFullYear())
+      }
+    }
+  }
+
+  return { type, title, bg, showEndDate, showStartDate, dateLabel, dateDayMonth, dateYear }
+}
+
 function ProductCard({
   product,
   badge,
@@ -71,6 +139,7 @@ function ProductCard({
 }) {
   const navigate = useNavigate()
   const { formatPrice: money } = useCurrency()
+  const { isAuthenticated } = useAuth()
 
   const {
     addToBasket,
@@ -498,9 +567,31 @@ function ProductCard({
     }, 2200)
   }
 
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const isPromoActive = Boolean(
+    product.promotion_price &&
+    Number(product.promotion_price) > 0 &&
+    (!product.from_date || String(product.from_date).slice(0, 10) <= todayStr) &&
+    (!product.to_date || String(product.to_date).slice(0, 10) >= todayStr || String(product.to_date).startsWith('9999'))
+  )
+  const cardPrice = isPromoActive
+    ? Number(product.promotion_price)
+    : (product.effective_price || Number(product.price || 0))
+
+  const bannerConfig = getCardBannerConfig(product, badge)
+
   return (
     <>
       <article className="product-card">
+        {bannerConfig.title && (
+          <div
+            className="product-card-top-banner"
+            style={{ backgroundColor: bannerConfig.bg }}
+          >
+            {bannerConfig.title}
+          </div>
+        )}
+
         <div
           className="product-card-click"
           onClick={openProduct}
@@ -515,7 +606,20 @@ function ProductCard({
             }
           }}
         >
-          {badge && (
+          {(bannerConfig.showEndDate || bannerConfig.showStartDate) && bannerConfig.dateDayMonth && (
+            <div
+              className="product-card-circle-badge"
+              style={{ backgroundColor: bannerConfig.bg }}
+            >
+              <span className="circle-ends-text">{bannerConfig.dateLabel || 'Ends'}</span>
+              <span className="circle-date-text">{bannerConfig.dateDayMonth}</span>
+              {bannerConfig.dateYear && (
+                <span className="circle-year-text">{bannerConfig.dateYear}</span>
+              )}
+            </div>
+          )}
+
+          {!bannerConfig.title && badge && (
             <span className="product-card-badge">
               {badge}
             </span>
@@ -534,24 +638,53 @@ function ProductCard({
           </div>
 
           <div className="product-card-price-row">
-            <span className="product-unit-price">
-              UNIT{' '}
-              {money(
-                Number(product.price || 0) /
-                  Math.max(
-                    unitsPerCase(product),
-                    1
-                  )
-              )}
-            </span>
+            {isAuthenticated ? (
+              <>
+                <span className="product-unit-price">
+                  UNIT{' '}
+                  {money(
+                    cardPrice /
+                      Math.max(
+                        unitsPerCase(product),
+                        1
+                      )
+                  )}
+                </span>
 
-            <span className="product-code">
-              {product.reference || '—'}
-            </span>
+                <span className="product-code">
+                  {product.reference || '—'}
+                </span>
 
-            <span className="product-case-price">
-              CASE {money(product.price)}
-            </span>
+                <span className="product-case-price">
+                  {isPromoActive && Number(product.price) > cardPrice && (
+                    <s style={{ opacity: 0.6, marginRight: '4px', fontSize: '0.85em' }}>{money(product.price)}</s>
+                  )}
+                  CASE {money(cardPrice)}
+                </span>
+              </>
+            ) : (
+              <div
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  padding: '4px 0',
+                  color: '#38bdf8',
+                  fontWeight: 600,
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigate('/login')
+                }}
+              >
+                <span>🔒</span> Login to view price
+              </div>
+            )}
           </div>
 
           <h3>{product.description}</h3>
@@ -577,51 +710,53 @@ function ProductCard({
           </div>
         </div>
 
-        <div className="product-card-actions">
-          <button
-            type="button"
-            className="view-btn"
-            onClick={openProduct}
-          >
-            View Product
-          </button>
+        {isAuthenticated && (
+          <div className="product-card-actions">
+            <button
+              type="button"
+              className="view-btn"
+              onClick={openProduct}
+            >
+              View Product
+            </button>
 
-          <button
-            type="button"
-            className={`heart-btn ${
-              isInWishlist(product.id)
-                ? 'active'
-                : ''
-            }`}
-            onClick={handleWishlist}
-            aria-label={
-              isInWishlist(product.id)
-                ? 'Remove from wishlist'
-                : 'Add to wishlist'
-            }
-            title={
-              isInWishlist(product.id)
-                ? 'Remove from wishlist'
-                : 'Add to wishlist'
-            }
-          >
-            {isInWishlist(product.id)
-              ? '♥'
-              : '♡'}
-          </button>
+            <button
+              type="button"
+              className={`heart-btn ${
+                isInWishlist(product.id)
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={handleWishlist}
+              aria-label={
+                isInWishlist(product.id)
+                  ? 'Remove from wishlist'
+                  : 'Add to wishlist'
+              }
+              title={
+                isInWishlist(product.id)
+                  ? 'Remove from wishlist'
+                  : 'Add to wishlist'
+              }
+            >
+              {isInWishlist(product.id)
+                ? '♥'
+                : '♡'}
+            </button>
 
-          <button
-            type="button"
-            className={`basket-btn ${
-              addedMessage ? 'added' : ''
-            }`}
-            onClick={handleAddClick}
-          >
-            {addedMessage
-              ? '✓ Added'
-              : 'Add to Basket'}
-          </button>
-        </div>
+            <button
+              type="button"
+              className={`basket-btn ${
+                addedMessage ? 'added' : ''
+              }`}
+              onClick={handleAddClick}
+            >
+              {addedMessage
+                ? '✓ Added'
+                : 'Add to Basket'}
+            </button>
+          </div>
+        )}
       </article>
 
       {showShippingModal && (

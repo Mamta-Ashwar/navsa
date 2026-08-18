@@ -113,16 +113,39 @@ class ProductController extends Controller
             $query->where('supplier_id', $request->supplier_id);
         }
 
+        $today = now()->toDateString();
+
         if ($request->filled('is_offer')) {
             $query->where('is_offer', $request->is_offer);
+            if ($request->is_offer == 1) {
+                $query->where(function ($q) use ($today) {
+                    $q->whereNull('from_date')->orWhere('from_date', '<=', $today);
+                })->where(function ($q) use ($today) {
+                    $q->whereNull('to_date')->orWhere('to_date', '>=', $today);
+                });
+            }
         }
 
         if ($request->filled('is_new_arrival')) {
             $query->where('is_new_arrival', $request->is_new_arrival);
+            if ($request->is_new_arrival == 1) {
+                $query->where(function ($q) use ($today) {
+                    $q->whereNull('from_date')->orWhere('from_date', '<=', $today);
+                })->where(function ($q) use ($today) {
+                    $q->whereNull('to_date')->orWhere('to_date', '>=', $today);
+                });
+            }
         }
 
         if ($request->filled('is_best_offer')) {
             $query->where('is_best_offer', $request->is_best_offer);
+            if ($request->is_best_offer == 1) {
+                $query->where(function ($q) use ($today) {
+                    $q->whereNull('from_date')->orWhere('from_date', '<=', $today);
+                })->where(function ($q) use ($today) {
+                    $q->whereNull('to_date')->orWhere('to_date', '>=', $today);
+                });
+            }
         }
 
         if ($request->filled('status')) {

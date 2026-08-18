@@ -55,9 +55,9 @@ export const getProducts = (params = {}) => {
 export const createProduct = (data) => req('POST', '/products', data)
 export const updateProduct = (id, data) => req('PUT', `/products/${id}`, data)
 export const toggleWeb = (id) => req('PATCH', `/products/${id}/toggle-web`)
-export const toggleOffer = (id, label) => req('PATCH', `/products/${id}/toggle-offer`, label ? { offer_label: label } : {})
-export const toggleBestOffer = (id) => req('PATCH', `/products/${id}/toggle-best-offer`)
-export const toggleNewArrival = (id) => req('PATCH', `/products/${id}/toggle-new-arrival`)
+export const toggleOffer = (id, payload) => req('PATCH', `/products/${id}/toggle-offer`, typeof payload === 'string' ? { offer_label: payload } : (payload || {}))
+export const toggleBestOffer = (id, payload) => req('PATCH', `/products/${id}/toggle-best-offer`, payload || {})
+export const toggleNewArrival = (id, payload) => req('PATCH', `/products/${id}/toggle-new-arrival`, payload || {})
 export const updateStock = (id, stock_quantity, price, price_list) => (
   req('PATCH', `/products/${id}/stock`, { stock_quantity, price, price_list })
 )
@@ -170,3 +170,10 @@ export const uploadBanner = (formData) => sendBannerForm('/banners', formData)
 export const updateBanner = (id, formData) => sendBannerForm(`/banners/${id}`, formData)
 export const reorderBanners = (position, ids) => req('POST', '/banners/reorder', { position, ids })
 export const deleteBanner = (id) => req('DELETE', `/banners/${id}`)
+
+export const getOrders = (params = {}) => {
+  const qs = new URLSearchParams(params).toString()
+  return req('GET', `/orders${qs ? `?${qs}` : ''}`)
+}
+export const getOrder = (id) => req('GET', `/orders/${id}`)
+export const updateOrderStatus = (id, status) => req('PATCH', `/orders/${id}/status`, { status })

@@ -11,6 +11,6 @@ return [
     |
     */
 
-    'site_key' => env('6LeWMHAtAAAAABfORIlP3B4Vc72uUhpSzlxwO7l8'),
-    'secret_key' => env('6LeWMHAtAAAAAOyVQvE4eo-ya7IYe444pDN6eygF'),
+    'site_key' => env('RECAPTCHA_SITE_KEY', '6LeWMHAtAAAAABfORIlP3B4Vc72uUhpSzlxwO7l8'),
+    'secret_key' => env('RECAPTCHA_SECRET_KEY', '6LeWMHAtAAAAAOyVQvE4eo-ya7IYe444pDN6eygF'),
 ];

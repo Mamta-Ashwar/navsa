@@ -46,7 +46,7 @@ class HomeBanner extends Model
             return $this->image_path;
         }
 
-        return Storage::disk('public')->url($this->image_path);
+        return '/storage/' . ltrim($this->image_path, '/');
     }
 
     public function getBrandNameAttribute(): ?string

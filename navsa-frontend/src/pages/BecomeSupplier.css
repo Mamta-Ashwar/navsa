@@ -399,3 +399,33 @@
     font-size: 28px;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Validation error field blinking animation & middle screen focus indicator
+   -------------------------------------------------------------------------- */
+@keyframes fieldBlinkPulse {
+  0%, 100% {
+    border-color: #dc2626 !important;
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.45) !important;
+    background-color: #fef2f2 !important;
+  }
+  50% {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 12px rgba(220, 38, 38, 0.12) !important;
+    background-color: #ffffff !important;
+  }
+}
+
+.invalid-blink {
+  animation: fieldBlinkPulse 0.5s ease-in-out 4 !important;
+  border-color: #dc2626 !important;
+  border-radius: 10px !important;
+}
+
+.invalid-blink input,
+.invalid-blink select,
+.invalid-blink textarea {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.35) !important;
+  background-color: #fef2f2 !important;
+}

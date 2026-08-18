@@ -255,22 +255,36 @@ function Home() {
     const BASE = import.meta.env.VITE_API_URL || '/api'
     const headers = { 'Accept': 'application/json' }
 
-    fetch(`${BASE}/products?page=1&sort_by=created_at&order=desc`, { headers })
+    // Total products count for stats
+    fetch(`${BASE}/products?per_page=1`, { headers })
       .then(r => r.json())
       .then(d => {
-        setNewArrivals((d.data || []).slice(0, 10))
         setStats(s => ({ ...s, products: d.total || 0 }))
       })
       .catch(() => {})
 
-    fetch(`${BASE}/products?page=2`, { headers })
+    // Fetch ONLY products explicitly flagged as New Arrivals (is_new_arrival=1)
+    fetch(`${BASE}/products?is_new_arrival=1&per_page=20`, { headers })
       .then(r => r.json())
-      .then(d => setClearance((d.data || []).slice(0, 10)))
+      .then(d => {
+        setNewArrivals(d.data || [])
+      })
       .catch(() => {})
 
-    fetch(`${BASE}/products?page=1&sort_by=price&order=desc`, { headers })
+    // Fetch ONLY products explicitly flagged as WIGIG / Clearance Offers (is_offer=1)
+    fetch(`${BASE}/products?is_offer=1&per_page=20`, { headers })
       .then(r => r.json())
-      .then(d => setBestSellers((d.data || []).slice(0, 10)))
+      .then(d => {
+        setClearance(d.data || [])
+      })
+      .catch(() => {})
+
+    // Fetch ONLY products explicitly flagged as Best Sellers (is_best_offer=1)
+    fetch(`${BASE}/products?is_best_offer=1&per_page=20`, { headers })
+      .then(r => r.json())
+      .then(d => {
+        setBestSellers(d.data || [])
+      })
       .catch(() => {})
 
     Promise.allSettled([
@@ -371,7 +385,6 @@ function Home() {
         title="WIGIG — Limited Period / Clearance Offer"
         subtitle="Fast-moving opportunities with everyday low pricing."
         products={clearance}
-        badge="EDLP"
         tone="white"
       />
 
@@ -466,7 +479,6 @@ function Home() {
         title="Our Best-Sellers"
         subtitle="Popular export-ready products ordered frequently by trade customers."
         products={bestSellers}
-        badge="EDLP"
         tone="white"
       />
 

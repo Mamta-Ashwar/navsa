@@ -7,6 +7,7 @@ import Brands from './pages/Brands'
 import Home from './pages/Home'
 import Shop from './pages/Shop'
 import Account from './pages/Account'
+import Profile from './pages/Profile'
 import Wishlist from './pages/Wishlist'
 import Basket from './pages/Basket'
 import Services from './pages/Services'
@@ -110,8 +111,10 @@ function App() {
                 <Route path="/account/login" element={<Account />} />
                 <Route path="/account/create" element={<BecomeCustomer />} />
                 <Route path="/account/supplier" element={<BecomeSupplier />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/account/profile" element={<Profile />} />
 
-                <Route path="/account" element={<Navigate to="/account/login" replace />} />
+                <Route path="/account" element={<Navigate to="/profile" replace />} />
                 <Route path="/become-a-customer" element={<Navigate to="/account/create" replace />} />
                 <Route path="/become-a-supplier" element={<Navigate to="/account/supplier" replace />} />
                 <Route path="/account/become-a-supplier" element={<Navigate to="/account/supplier" replace />} />

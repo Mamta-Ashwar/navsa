@@ -10,6 +10,13 @@ use App\Models\SubCategory;
 use App\Http\Controllers\Api\ShippingController;
 use App\Http\Controllers\Api\CustomerRegistrationController;
 use App\Http\Controllers\Api\SupplierRegistrationController;
+use App\Http\Controllers\Api\ProfileController;
+
+Route::get('/profile', [ProfileController::class, 'getProfile']);
+Route::put('/profile', [ProfileController::class, 'updateProfile']);
+Route::get('/orders', [ProfileController::class, 'getOrders']);
+Route::post('/orders', [ProfileController::class, 'createOrder']);
+Route::post('/orders/{id}/reorder', [ProfileController::class, 'reorder']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -133,4 +140,9 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
     Route::post('/roles',                          [AdminController::class, 'createRole'])->middleware('can:roles.manage');
     Route::put('/roles/{id}',                      [AdminController::class, 'updateRolePermissions'])->middleware('can:roles.manage');
     Route::get('/permissions',                     [AdminController::class, 'getPermissions'])->middleware('can:roles.view');
+
+    // Orders Management
+    Route::get('/orders',                          [AdminController::class, 'orders']);
+    Route::get('/orders/{id}',                     [AdminController::class, 'showOrder']);
+    Route::patch('/orders/{id}/status',            [AdminController::class, 'updateOrderStatus']);
 });

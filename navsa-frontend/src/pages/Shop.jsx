@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ProductCard from '../components/ProductCard'
 import { getProductImageUrl } from '../utils/imageHelper'
+import { useAuth } from '../context/AuthContext'
 import './Shop.css'
 
 function normaliseProducts(payload) {
@@ -16,6 +17,7 @@ function productImage(product) {
 }
 
 function Shop() {
+  const { isAuthenticated } = useAuth()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const suggestionRequestRef = useRef(null)
@@ -223,43 +225,59 @@ function Shop() {
       </section>
 
       <section className="shop-content">
-        <div className="shop-toolbar">
-          <div>
-            <span className="shop-kicker">PRODUCT DIRECTORY</span>
-            <h1>{categoryFilter || brandFilter || (urlSearch ? `Results for “${urlSearch}”` : 'All Products')}</h1>
-          </div>
-          <p>Showing <strong>{products.length}</strong> of <strong>{total}</strong> products</p>
-        </div>
-
-        {loading ? (
-          <div className="shop-grid">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div className="shop-skeleton-card" key={index}>
-                <div className="shop-skeleton-img" />
-                <div className="shop-skeleton-line big" />
-                <div className="shop-skeleton-line" />
-                <div className="shop-skeleton-line small" />
-              </div>
-            ))}
-          </div>
-        ) : products.length === 0 ? (
-          <div className="shop-empty">
-            <div>🔍</div><h2>No products found</h2>
-            <p>Try another search term, category or brand.</p>
-            <Link to="/shop">View all products</Link>
+        {!isAuthenticated ? (
+          <div className="glass-panel" style={{ padding: '60px 24px', textAlign: 'center', background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', margin: '40px auto', maxWidth: '640px' }}>
+            <div style={{ fontSize: '56px', marginBottom: '20px' }}>🔒</div>
+            <h2 style={{ fontSize: '26px', fontWeight: 700, color: '#fff', marginBottom: '12px' }}>Please Log In to View Products</h2>
+            <p style={{ color: '#94a3b8', fontSize: '15px', marginBottom: '32px', lineHeight: '1.6' }}>
+              Access is limited to approved trade and wholesale customers. Please log in or apply for a trade account to view our product directory, category listings, and wholesale prices.
+            </p>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+              <Link to="/login" className="admin-btn admin-btn-primary" style={{ padding: '12px 36px', fontSize: '15px', textDecoration: 'none' }}>Log In</Link>
+              <Link to="/register" className="admin-btn admin-btn-ghost" style={{ padding: '12px 36px', fontSize: '15px', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>Become a Customer</Link>
+            </div>
           </div>
         ) : (
-          <div className="shop-grid">
-            {products.map(product => <ProductCard key={product.id} product={product} />)}
-          </div>
-        )}
+          <>
+            <div className="shop-toolbar">
+              <div>
+                <span className="shop-kicker">PRODUCT DIRECTORY</span>
+                <h1>{categoryFilter || brandFilter || (urlSearch ? `Results for “${urlSearch}”` : 'All Products')}</h1>
+              </div>
+              <p>Showing <strong>{products.length}</strong> of <strong>{total}</strong> products</p>
+            </div>
 
-        {!loading && products.length > 0 && (
-          <div className="shop-pagination">
-            <button type="button" onClick={() => loadProducts(currentPage - 1, urlSearch)} disabled={currentPage <= 1}>← Prev</button>
-            <span>Page {currentPage} / {lastPage}</span>
-            <button type="button" onClick={() => loadProducts(currentPage + 1, urlSearch)} disabled={currentPage >= lastPage}>Next →</button>
-          </div>
+            {loading ? (
+              <div className="shop-grid">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <div className="shop-skeleton-card" key={index}>
+                    <div className="shop-skeleton-img" />
+                    <div className="shop-skeleton-line big" />
+                    <div className="shop-skeleton-line" />
+                    <div className="shop-skeleton-line small" />
+                  </div>
+                ))}
+              </div>
+            ) : products.length === 0 ? (
+              <div className="shop-empty">
+                <div>🔍</div><h2>No products found</h2>
+                <p>Try another search term, category or brand.</p>
+                <Link to="/shop">View all products</Link>
+              </div>
+            ) : (
+              <div className="shop-grid">
+                {products.map(product => <ProductCard key={product.id} product={product} />)}
+              </div>
+            )}
+
+            {!loading && products.length > 0 && (
+              <div className="shop-pagination">
+                <button type="button" onClick={() => loadProducts(currentPage - 1, urlSearch)} disabled={currentPage <= 1}>← Prev</button>
+                <span>Page {currentPage} / {lastPage}</span>
+                <button type="button" onClick={() => loadProducts(currentPage + 1, urlSearch)} disabled={currentPage >= lastPage}>Next →</button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </main>

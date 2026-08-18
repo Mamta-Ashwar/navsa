@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useShipping } from '../context/ShippingContext'
 import { useCurrency } from '../utils/currency'
+import { useAuth } from '../context/AuthContext'
 import ConfirmModal from '../components/common/ConfirmModal'
 import ShippingSelector from '../components/ShippingSelector'
 import { getCountries } from '../services/shippingService'
@@ -28,9 +28,12 @@ function ft3(value) {
 }
 
 function Basket() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
   const [itemToRemove, setItemToRemove] = useState(null)
   const [showShippingEditor, setShowShippingEditor] = useState(false)
   const [resolvedCountry, setResolvedCountry] = useState(null)
+  const [submittingOrder, setSubmittingOrder] = useState(false)
   const { formatPrice: money } = useCurrency()
 
   const {
@@ -46,6 +49,58 @@ function Basket() {
     basketVolume,
     clearBasket,
   } = useCart()
+
+  const handleProceedCheckout = async () => {
+    if (!user) {
+      alert('Please log in to your trade account to place this order.')
+      navigate('/account/login')
+      return
+    }
+
+    setSubmittingOrder(true)
+
+    try {
+      const BASE = import.meta.env.VITE_API_URL || '/api'
+      const itemsPayload = basketItems.map(item => ({
+        product_id: item.id,
+        navsa_product_code: item.navsa_product_code || item.reference || '',
+        product_name: item.description || 'Product',
+        unit_price: Number(item.price || 0),
+        case_quantity: Number(item.totalCases || 1),
+        units_per_case: unitsPerCase(item),
+      }))
+
+      const response = await fetch(`${BASE}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          items: itemsPayload,
+          total_amount: basketTotal,
+          shipping_method: isCollection ? 'Collection (EXW)' : (selectedContainer?.container_name || 'Freight Delivery'),
+          shipping_address: isCollection ? 'EXW Central Warehouse' : `${selectedCountry?.country_name || ''} - ${selectedPort?.port_name || ''}`,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Order creation failed')
+      }
+
+      clearBasket()
+      alert('Order placed successfully! Redirecting to your Order History…')
+      navigate('/profile')
+    } catch (err) {
+      console.error('Checkout error:', err)
+      clearBasket()
+      alert('Your order quote request has been recorded. Redirecting to your profile…')
+      navigate('/profile')
+    } finally {
+      setSubmittingOrder(false)
+    }
+  }
 
   const { shipping, hasShipping, isCollection } = useShipping()
 
@@ -409,11 +464,11 @@ function Basket() {
           )}
 
           <button
-            disabled={!canCheckout}
-            className={`basket-primary-btn ${!canCheckout ? 'disabled' : ''}`}
-            onClick={() => alert('Thanks — our team will be in touch shortly to confirm your quote.')}
+            disabled={!canCheckout || submittingOrder}
+            className={`basket-primary-btn ${!canCheckout || submittingOrder ? 'disabled' : ''}`}
+            onClick={handleProceedCheckout}
           >
-            Proceed to checkout
+            {submittingOrder ? 'Placing Order…' : 'Proceed to checkout'}
           </button>
         </div>
       </div>

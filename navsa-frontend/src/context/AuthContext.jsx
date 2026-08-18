@@ -5,14 +5,15 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('admin_user') || 'null');
+      const stored = localStorage.getItem('user') || localStorage.getItem('admin_user');
+      return stored ? JSON.parse(stored) : null;
     } catch {
       return null;
     }
   });
 
   const [token, setToken] = useState(() => {
-    return localStorage.getItem('admin_token') || null;
+    return localStorage.getItem('token') || localStorage.getItem('admin_token') || null;
   });
 
   const [roles, setRoles] = useState(() => {
@@ -38,6 +39,8 @@ export function AuthProvider({ children }) {
     setRoles(roles);
     setPermissions(permissions);
 
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('token', token);
     localStorage.setItem('admin_user', JSON.stringify(user));
     localStorage.setItem('admin_token', token);
     localStorage.setItem('admin_roles', JSON.stringify(roles));
@@ -50,6 +53,8 @@ export function AuthProvider({ children }) {
     setRoles([]);
     setPermissions([]);
 
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
     localStorage.removeItem('admin_user');
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_roles');

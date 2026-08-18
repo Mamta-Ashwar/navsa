@@ -660,36 +660,325 @@ function BecomeCustomer() {
     }
   };
 
+  const triggerFieldBlinkAndScroll = (targetElement, message) => {
+    if (!targetElement) return;
+
+    if (message) {
+      setValidationError(message);
+    }
+
+    // Scroll to the exact middle of the screen
+    targetElement.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    });
+
+    // Apply blinking animation class
+    targetElement.classList.remove('invalid-blink');
+    void targetElement.offsetWidth; // trigger reflow
+    targetElement.classList.add('invalid-blink');
+
+    // Focus input or child input
+    const inputToFocus =
+      targetElement.tagName === 'INPUT' ||
+      targetElement.tagName === 'SELECT' ||
+      targetElement.tagName === 'TEXTAREA'
+        ? targetElement
+        : targetElement.querySelector('input, select, textarea');
+
+    if (inputToFocus) {
+      try {
+        inputToFocus.focus({ preventScroll: true });
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    setTimeout(() => {
+      targetElement.classList.remove('invalid-blink');
+    }, 2800);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setValidationError('');
 
+    // Field-by-field validation checks with smooth scroll to middle & red blink highlight
+    if (!formData.first_name.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="first_name"]'),
+        'First Name is required.'
+      );
+      return;
+    }
+
+    if (!formData.last_name.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="last_name"]'),
+        'Last Name is required.'
+      );
+      return;
+    }
+
+    if (!formData.email.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.getElementById('customer-email'),
+        'Email address is required.'
+      );
+      return;
+    }
+
+    if (!formData.confirm_email.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.getElementById('confirm-email'),
+        'Confirm Email address is required.'
+      );
+      return;
+    }
+
     if (formData.email.trim() !== formData.confirm_email.trim()) {
-      setValidationError('Email and Confirm Email must match.');
-      document.getElementById('confirm-email')?.focus();
+      triggerFieldBlinkAndScroll(
+        document.getElementById('confirm-email'),
+        'Email and Confirm Email must match.'
+      );
+      return;
+    }
+
+    if (!formData.password) {
+      triggerFieldBlinkAndScroll(
+        document.getElementById('customer-password'),
+        'Password is required.'
+      );
+      return;
+    }
+
+    if (!formData.confirm_password) {
+      triggerFieldBlinkAndScroll(
+        document.getElementById('confirm-password'),
+        'Confirm Password is required.'
+      );
       return;
     }
 
     if (formData.password !== formData.confirm_password) {
-      setValidationError('Password and Confirm Password must match.');
-      document.getElementById('confirm-password')?.focus();
+      triggerFieldBlinkAndScroll(
+        document.getElementById('confirm-password'),
+        'Password and Confirm Password must match.'
+      );
       return;
     }
 
-    if (formData.whatsapp_offers_opt_in && !formData.mobile.trim()) {
-      setValidationError('Mobile Number is required when WhatsApp offers are selected.');
-      document.querySelector('input[name="mobile"]')?.focus();
+    if (!formData.region) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="region"]')?.closest('.form-group'),
+        'Please select your Region.'
+      );
+      return;
+    }
+
+    if (!formData.country) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('select[name="country"]'),
+        'Country selection is required.'
+      );
+      return;
+    }
+
+    if (!formData.registered_company_name.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="registered_company_name"]'),
+        'Registered Company Name is required.'
+      );
       return;
     }
 
     if (isUkCustomer && !formData.vat_number.trim()) {
-      setValidationError('VAT Number is required for UK customers.');
-      document.getElementById('vat-number')?.focus();
+      triggerFieldBlinkAndScroll(
+        document.getElementById('vat-number'),
+        'VAT Number is required for UK customers.'
+      );
+      return;
+    }
+
+    if (!formData.trading_years) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('select[name="trading_years"]'),
+        'Please select trading years.'
+      );
+      return;
+    }
+
+    if (!formData.business_nature) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('select[name="business_nature"]'),
+        'Please select the nature of your business.'
+      );
+      return;
+    }
+
+    if (!formData.director_name.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="director_name"]'),
+        'Full name of the director is required.'
+      );
+      return;
+    }
+
+    if (!formData.currency) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="currency"]')?.closest('.form-group'),
+        'Please select your preferred payment currency.'
+      );
+      return;
+    }
+
+    if (!formData.registered_phone.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="registered_phone"]'),
+        'Registered company phone number is required.'
+      );
+      return;
+    }
+
+    if (formData.whatsapp_offers_opt_in && !formData.mobile.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="mobile"]'),
+        'Mobile Number is required when WhatsApp offers are selected.'
+      );
+      return;
+    }
+
+    if (!formData.address_line_1.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="address_line_1"]'),
+        'Billing Address line 1 is required.'
+      );
+      return;
+    }
+
+    if (!formData.city.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="city"]'),
+        'Billing City/Town is required.'
+      );
+      return;
+    }
+
+    if (!formData.province.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="province"]'),
+        'Billing State/Province is required.'
+      );
+      return;
+    }
+
+    if (!formData.zip_code.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="zip_code"]'),
+        'Billing Zip code is required.'
+      );
+      return;
+    }
+
+    if (!formData.same_as_billing) {
+      if (!formData.shipping_address_line_1.trim()) {
+        triggerFieldBlinkAndScroll(
+          document.querySelector('input[name="shipping_address_line_1"]'),
+          'Shipping Address line 1 is required.'
+        );
+        return;
+      }
+      if (!formData.shipping_city.trim()) {
+        triggerFieldBlinkAndScroll(
+          document.querySelector('input[name="shipping_city"]'),
+          'Shipping City/Town is required.'
+        );
+        return;
+      }
+      if (!formData.shipping_province.trim()) {
+        triggerFieldBlinkAndScroll(
+          document.querySelector('input[name="shipping_province"]'),
+          'Shipping State/Province is required.'
+        );
+        return;
+      }
+      if (!formData.shipping_zip_code.trim()) {
+        triggerFieldBlinkAndScroll(
+          document.querySelector('input[name="shipping_zip_code"]'),
+          'Shipping Zip code is required.'
+        );
+        return;
+      }
+      if (!formData.shipping_country) {
+        triggerFieldBlinkAndScroll(
+          document.querySelector('select[name="shipping_country"]'),
+          'Shipping Country is required.'
+        );
+        return;
+      }
+      if (!formData.shipping_telephone.trim()) {
+        triggerFieldBlinkAndScroll(
+          document.querySelector('input[name="shipping_telephone"]'),
+          'Shipping Telephone is required.'
+        );
+        return;
+      }
+    }
+
+    if (!formData.account_name.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="account_name"]'),
+        'Accounts Name is required.'
+      );
+      return;
+    }
+
+    if (!formData.account_email.trim()) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="account_email"]'),
+        'Accounts Email Address is required.'
+      );
+      return;
+    }
+
+    if (!formData.average_order_value) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('select[name="average_order_value"]'),
+        'Average Order Value selection is required.'
+      );
+      return;
+    }
+
+    if (!formData.turnover) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('select[name="turnover"]'),
+        'Company Turnover selection is required.'
+      );
+      return;
+    }
+
+    if (!formData.import_full_containers) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="import_full_containers"]')?.closest('.form-group'),
+        'Please select an option for container import.'
+      );
+      return;
+    }
+
+    if (!formData.categories_interested || formData.categories_interested.length === 0) {
+      triggerFieldBlinkAndScroll(
+        document.querySelector('.checkbox-grid')?.closest('.form-group'),
+        'Please select at least one category of interest.'
+      );
       return;
     }
 
     if (!formData.terms_accepted) {
-      setValidationError('Please accept the Terms & Conditions.');
+      triggerFieldBlinkAndScroll(
+        document.querySelector('input[name="terms_accepted"]')?.closest('.checkbox-full'),
+        'Please accept the Terms & Conditions.'
+      );
       return;
     }
 
@@ -703,11 +992,10 @@ function BecomeCustomer() {
     }
 
     if (!recaptchaToken) {
-      setValidationError('Please complete the Google reCAPTCHA verification.');
-      document.querySelector('.recaptcha-section')?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      });
+      triggerFieldBlinkAndScroll(
+        document.querySelector('.recaptcha-section'),
+        'Please complete the Google reCAPTCHA verification.'
+      );
       return;
     }
 
@@ -750,14 +1038,54 @@ function BecomeCustomer() {
         body: JSON.stringify(payload)
       });
       
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Registration failed. Please check your inputs.');
+        let serverErrorMsg = data.message;
+
+        if (data.errors && typeof data.errors === 'object') {
+          const firstErrorKey = Object.keys(data.errors)[0];
+          const firstErrorText = Array.isArray(data.errors[firstErrorKey])
+            ? data.errors[firstErrorKey][0]
+            : data.errors[firstErrorKey];
+
+          if (firstErrorText) {
+            serverErrorMsg = firstErrorText;
+          }
+
+          if (firstErrorKey === 'email') {
+            triggerFieldBlinkAndScroll(
+              document.getElementById('customer-email'),
+              serverErrorMsg
+            );
+            setStatus('error');
+            setRecaptchaToken('');
+            setRecaptchaResetCounter(current => current + 1);
+            return;
+          }
+
+          if (firstErrorKey === 'password') {
+            triggerFieldBlinkAndScroll(
+              document.getElementById('customer-password'),
+              serverErrorMsg
+            );
+            setStatus('error');
+            setRecaptchaToken('');
+            setRecaptchaResetCounter(current => current + 1);
+            return;
+          }
+        }
+
+        throw new Error(
+          serverErrorMsg || 'Registration failed. Please check your inputs.'
+        );
       }
 
       setStatus('success');
     } catch (error) {
       console.error('Error submitting form:', error);
       setStatus('error');
+      setValidationError(error.message || 'An error occurred during submission.');
       setRecaptchaToken('');
       setRecaptchaResetCounter(current => current + 1);
     }
@@ -842,7 +1170,7 @@ function BecomeCustomer() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="customer-form" autoComplete="off">
+        <form noValidate onSubmit={handleSubmit} className="customer-form" autoComplete="off">
           <div className="navsa-autofill-guard" aria-hidden="true">
             <input
               type="text"

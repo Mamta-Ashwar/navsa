@@ -111,26 +111,89 @@ function StockModal({ product, onClose, onSaved }) {
   )
 }
 
-function OfferModal({ product, onClose, onSaved }) {
-  const [label, setLabel] = useState(product.offer_label || '')
-  const [busy, setBusy]   = useState(false)
+function PromoModal({ product, featureType, onClose, onSaved }) {
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const [price, setPrice] = useState(product.promotion_price ?? '')
+  const [fromDate, setFromDate] = useState(todayStr)
+  const [toDate, setToDate] = useState(product.to_date ? String(product.to_date).slice(0, 10) : '')
+  const [busy, setBusy] = useState(false)
+
+  const featureTitle =
+    featureType === 'new_arrival' ? '⭐ Set New Arrival Promotion' :
+    featureType === 'wigig' ? '🏷️ Set WIGIG Clearance Offer' :
+    '🔥 Set Best-Seller Promotion'
+
   const save = async () => {
+    if (!price || !fromDate || !toDate) {
+      alert('All 3 fields are required to enable a promotion: Offer Price (£), Start Date, and End Date.')
+      return
+    }
+
+    if (fromDate && toDate && toDate < fromDate) {
+      alert('Invalid Date Range: End Date (' + toDate + ') must be on or after Start Date (' + fromDate + ').')
+      return
+    }
+
+    if (product?.promotion_price != null && Number(price) === Number(product.promotion_price)) {
+      const confirmOldPrice = window.confirm(
+        'Do you want older promotion price (£' + product.promotion_price + ')? Please confirm to keep it or Cancel to change it.'
+      )
+      if (!confirmOldPrice) return
+    }
+
     setBusy(true)
     try {
-      await toggleOffer(product.id, label)
-      onSaved(); onClose()
-    } catch (e) { alert(e.message) }
-    finally { setBusy(false) }
+      const payload = {
+        promotion_price: price || null,
+        from_date: fromDate || null,
+        to_date: toDate || null,
+      }
+
+      if (featureType === 'new_arrival') {
+        await toggleNewArrival(product.id, payload)
+      } else if (featureType === 'wigig') {
+        await toggleOffer(product.id, payload)
+      } else if (featureType === 'best_seller') {
+        await toggleBestOffer(product.id, payload)
+      }
+
+      onSaved()
+      onClose()
+    } catch (e) {
+      alert(e.message || 'Error saving promotion settings')
+    } finally {
+      setBusy(false)
+    }
   }
+
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
-      <div className="glass-panel" style={{ padding:'32px', width:'340px', background: '#0f172a' }}>
-        <h3 style={{ marginBottom:'16px' }}>Set Offer Label</h3>
-        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. 20% OFF, FLASH DEAL…"
-          className="admin-input-field" style={{ width:'100%', marginBottom:'16px' }} />
-        <div style={{ display:'flex', gap:'10px' }}>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+      <div className="glass-panel" style={{ padding:'28px', width:'380px', background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px' }}>
+        <h3 style={{ marginBottom:'8px', fontSize: '18px', color: '#fff', fontWeight: 700 }}>{featureTitle}</h3>
+        <p style={{ color:'#94a3b8', fontSize:'12px', marginBottom:'20px' }}>
+          {product.navsa_product_code || '—'} — {product.description?.slice(0, 45)}
+        </p>
+
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <div className="admin-input-group">
+            <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>Offer Price (£)</label>
+            <input type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 9.99" className="admin-input-field" style={{ width:'100%' }} />
+          </div>
+
+          <div className="admin-input-group">
+            <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>Start Date (From Date)</label>
+            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="admin-input-field" style={{ width:'100%', colorScheme: 'dark' }} />
+          </div>
+
+          <div className="admin-input-group">
+            <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>End Date (To Date)</label>
+            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="admin-input-field" style={{ width:'100%', colorScheme: 'dark' }} />
+          </div>
+        </div>
+
+        <div style={{ display:'flex', gap:'10px', marginTop:'24px' }}>
           <button onClick={save} disabled={busy} className="admin-btn admin-btn-primary" style={{ flex:1 }}>
-            {busy ? '…' : '✓ Enable Offer'}
+            {busy ? 'Saving…' : '✓ Save & Enable'}
           </button>
           <button onClick={onClose} className="admin-btn admin-btn-ghost" style={{ flex:1, border: '1px solid rgba(255,255,255,0.1)' }}>Cancel</button>
         </div>
@@ -152,7 +215,21 @@ const EXTRA_FIELDS = [
       { value: 'CASE',    label: 'CASE (Case, Layer & Pallet Allowed)' },
     ]
   },
-  { key: 'price_list',      label: 'PriceList',                     type: 'text' },
+  {
+    key: 'price_list',
+    label: 'PriceList',
+    type: 'select',
+    options: [
+      { value: 'STD',               label: 'STD (Standard)' },
+      { value: 'EDLP',              label: 'EDLP (Every Day Low Price)' },
+      { value: 'MONTHLY PROMOTION', label: 'MONTHLY PROMOTION' },
+      { value: 'CLEARANCE',         label: 'CLEARANCE' },
+      { value: 'PRESELL',           label: 'PRESELL' },
+      { value: 'NEW ARRIVAL',       label: 'NEW ARRIVAL' },
+      { value: 'BEST SELLER',       label: 'BEST SELLER' },
+      { value: 'WIGIG',             label: 'WIGIG' },
+    ]
+  },
   { key: 'price',           label: 'Standard price',                type: 'number' },
   { key: 'promotion_price', label: 'Promotion Price (£)',           type: 'number' },
   { key: 'from_date',       label: 'FromDate',                      type: 'date' },
@@ -872,6 +949,37 @@ function EditProductModal({ product, onClose, onSaved }) {
       return
     }
 
+    const priceListUpper = String(form.price_list || '').trim().toUpperCase()
+    const isPromoSet = priceListUpper !== '' && priceListUpper !== 'STD'
+
+    if (isPromoSet) {
+      const hasFrom = Boolean(form.from_date)
+      const hasTo = Boolean(form.to_date)
+      const hasPrice = form.promotion_price !== null && form.promotion_price !== '' && Number(form.promotion_price) > 0
+
+      if (!hasFrom || !hasTo || !hasPrice) {
+        alert('To save promotion (' + form.price_list + '), all 3 fields are required: Starting Date, Ending Date, and Promotion Price (£).')
+        return
+      }
+
+      if (form.from_date && form.to_date && form.to_date < form.from_date) {
+        alert('Invalid Date Range: Ending Date (' + form.to_date + ') must be on or after Starting Date (' + form.from_date + ').')
+        return
+      }
+
+      const oldPromPrice = product?.promotion_price != null && product?.promotion_price !== '' ? Number(product.promotion_price) : null
+      const newPromPrice = form.promotion_price != null && form.promotion_price !== '' ? Number(form.promotion_price) : null
+
+      if (oldPromPrice !== null && newPromPrice === oldPromPrice) {
+        const confirmOldPrice = window.confirm(
+          'Do you want older promotion price (£' + oldPromPrice + ')? Please confirm to keep it or Cancel to change it.'
+        )
+        if (!confirmOldPrice) {
+          return
+        }
+      }
+    }
+
     setBusy(true)
     try {
       const payload = { ...form }
@@ -1383,7 +1491,7 @@ export default function AdminProducts() {
   const [filter,  setFilter]  = useState({})
   const [loading, setLoading] = useState(true)
   const [stockModal, setStockModal] = useState(null)
-  const [offerModal, setOfferModal] = useState(null)
+  const [promoModal, setPromoModal] = useState(null)
   const [editModal, setEditModal]   = useState(null)
   const [detailModal, setDetailModal] = useState(null)
 
@@ -1433,16 +1541,24 @@ export default function AdminProducts() {
     if (product.is_offer) {
       try { await toggleOffer(product.id); load() } catch (e) { alert(e.message) }
     } else {
-      setOfferModal(product)
+      setPromoModal({ product, featureType: 'wigig' })
     }
   }
 
-  const doToggleBestOffer = async (id) => {
-    try { await toggleBestOffer(id); load() } catch (e) { alert(e.message) }
+  const doToggleBestOffer = async (product) => {
+    if (product.is_best_offer) {
+      try { await toggleBestOffer(product.id); load() } catch (e) { alert(e.message) }
+    } else {
+      setPromoModal({ product, featureType: 'best_seller' })
+    }
   }
 
-  const doToggleNewArrival = async (id) => {
-    try { await toggleNewArrival(id); load() } catch (e) { alert(e.message) }
+  const doToggleNewArrival = async (product) => {
+    if (product.is_new_arrival) {
+      try { await toggleNewArrival(product.id); load() } catch (e) { alert(e.message) }
+    } else {
+      setPromoModal({ product, featureType: 'new_arrival' })
+    }
   }
 
   const requestProductAction = (product, action) => {
@@ -1803,7 +1919,7 @@ export default function AdminProducts() {
         </div>
       )}
       {stockModal   && <StockModal product={stockModal} onClose={() => setStockModal(null)} onSaved={load} />}
-      {offerModal   && <OfferModal product={offerModal} onClose={() => setOfferModal(null)} onSaved={load} />}
+      {promoModal   && <PromoModal product={promoModal.product} featureType={promoModal.featureType} onClose={() => setPromoModal(null)} onSaved={load} />}
       {editModal    && <EditProductModal product={editModal} onClose={() => setEditModal(null)} onSaved={load} />}
       {detailModal  && <ProductDetailModal product={detailModal} onClose={() => setDetailModal(null)} />}
       {erpModalOpen   && <ErpImportModal mode="erp" onClose={() => setErpModalOpen(false)} onImportDone={load} />}
@@ -2059,19 +2175,31 @@ export default function AdminProducts() {
                     <td>{p.category?.category_name || '—'}</td>
                     <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.is_offer} onChange={() => !p.deleted && doToggleOffer(p)} />
+                        <input
+                          type="checkbox"
+                          checked={Boolean(p.is_new_arrival && (!p.to_date || String(p.to_date).slice(0, 10) >= new Date().toISOString().slice(0, 10)))}
+                          onChange={() => !p.deleted && doToggleNewArrival(p)}
+                        />
                         <span className="admin-slider"></span>
                       </label>
                     </td>
                     <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.is_best_offer} onChange={() => !p.deleted && doToggleBestOffer(p.id)} />
+                        <input
+                          type="checkbox"
+                          checked={Boolean(p.is_offer && (!p.to_date || String(p.to_date).slice(0, 10) >= new Date().toISOString().slice(0, 10)))}
+                          onChange={() => !p.deleted && doToggleOffer(p)}
+                        />
                         <span className="admin-slider"></span>
                       </label>
                     </td>
                     <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                        <label className="admin-switch">
-                        <input type="checkbox" checked={!!p.is_new_arrival} onChange={() => !p.deleted && doToggleNewArrival(p.id)} />
+                        <input
+                          type="checkbox"
+                          checked={Boolean(p.is_best_offer && (!p.to_date || String(p.to_date).slice(0, 10) >= new Date().toISOString().slice(0, 10)))}
+                          onChange={() => !p.deleted && doToggleBestOffer(p)}
+                        />
                         <span className="admin-slider"></span>
                       </label>
                     </td>

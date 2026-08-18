@@ -20,15 +20,6 @@ const categories = [
   { label: "Cleaning & Households",    db: "Cleaning & Households" },
 ];
 
-const quickAccess = [
-  "My Home", "My Favourites", "Previous Products", "All Products",
-];
-
-const promotions = [
-  "Every Day Low Price", "Weekly Deals", "Monthly Promotions",
-  "Seasonal Offers", "New Products", "Clearance",
-];
-
 const navItems = [
   { name: "Home",               path: "/",                  mega: false },
   { name: "Shop",               path: "/shop",              mega: true  },
@@ -120,7 +111,7 @@ export default function Navigation({ isSticky, scrollProgress }) {
                   boxShadow: "0 18px 40px rgba(0,0,0,.15)",
                   padding: "35px 6vw", display: "flex", gap: "55px", zIndex: 999,
                 }}>
-                  <div style={{ flex: 2 }}>
+                  <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, color: colors.navy, marginBottom: "18px", fontSize: "13px", letterSpacing: ".5px" }}>
                       SHOP BY CATEGORY
                     </div>
@@ -139,35 +130,6 @@ export default function Navigation({ isSticky, scrollProgress }) {
                         </Link>
                       ))}
                     </div>
-                  </div>
-
-                  <div style={{ width: "220px", borderLeft: "1px solid #ececec", paddingLeft: "35px" }}>
-                    <div style={{ fontWeight: 700, color: colors.navy, marginBottom: "18px", fontSize: "13px", letterSpacing: ".5px" }}>
-                      QUICK ACCESS
-                    </div>
-                    {quickAccess.map((q) => (
-                      <div key={q} style={{ padding: "7px 0", borderBottom: "1px solid #f3f3f3", fontSize: "14px" }}>
-                        {q}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ width: "260px", borderLeft: "1px solid #ececec", paddingLeft: "35px" }}>
-                    <div style={{ fontWeight: 700, color: colors.navy, marginBottom: "18px", fontSize: "13px", letterSpacing: ".5px" }}>
-                      PROMOTIONS
-                    </div>
-                    {promotions.map((p) => (
-                      <div key={p} style={{ padding: "7px 0", borderBottom: "1px solid #f3f3f3", color: colors.accent, fontWeight: 600, fontSize: "14px" }}>
-                        {p}
-                      </div>
-                    ))}
-                    
-                    <a href="https://www.navsainternational.co.uk/resources/deal1.pdf"
-                      target="_blank" rel="noreferrer"
-                      style={{ display: "inline-block", marginTop: "20px", color: colors.navy, textDecoration: "none", fontWeight: 700, fontSize: "14px" }}
-                    >
-                      📄 Download Latest Deals PDF
-                    </a>
                   </div>
                 </div>
               )}

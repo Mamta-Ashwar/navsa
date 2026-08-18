@@ -28,6 +28,8 @@ import {
   EyeOff,
   Database,
   CircleCheck,
+  ShoppingBag,
+  FileBarChart,
 } from 'lucide-react';
 
 import '../admin.css';
@@ -41,6 +43,8 @@ import AdminCategories from './admin/AdminCategories';
 import AdminRegistrations from './admin/AdminRegistrations';
 import AdminPdfs from './admin/AdminPdfs';
 import AdminRoles from './admin/AdminRoles';
+import AdminOrders from './admin/AdminOrders';
+import AdminReports from './admin/AdminReports';
 import { useAuth } from '../context/AuthContext';
 
 const navigationSections = [
@@ -82,6 +86,12 @@ const navigationSections = [
         icon: FolderTree,
         permission: 'categories.manage',
       },
+      {
+        to: '/admin/orders',
+        label: 'Orders',
+        icon: ShoppingBag,
+        permission: null,
+      },
     ],
   },
   {
@@ -115,6 +125,12 @@ const navigationSections = [
         label: 'PDFs & Banners',
         icon: FileStack,
         permission: (hasPermission) => hasPermission('banners.manage') || hasPermission('pdfs.manage'),
+      },
+      {
+        to: '/admin/reports',
+        label: 'Order Reports',
+        icon: FileBarChart,
+        permission: null,
       },
     ],
   },
@@ -177,10 +193,20 @@ const pageDetails = {
     title: 'Categories',
     description: 'Organise the product catalogue into clear categories.',
   },
+  '/admin/orders': {
+    eyebrow: 'Catalogue',
+    title: 'Orders',
+    description: 'View trade customer orders, order items, delivery details and order status.',
+  },
   '/admin/pdfs': {
     eyebrow: 'Content',
     title: 'PDFs & Banners',
     description: 'Manage promotional PDFs, documents and homepage banners.',
+  },
+  '/admin/reports': {
+    eyebrow: 'Content',
+    title: 'Order & Stock Reports',
+    description: 'List of completed trade orders, product stock prices, case quantities, and sales summaries.',
   },
   '/admin/roles': {
     eyebrow: 'Administration',
@@ -460,6 +486,10 @@ function AdminShell() {
               element={hasPermission('categories.manage') ? <AdminCategories /> : <Navigate to="/admin/dashboard" replace />}
             />
             <Route
+              path="orders"
+              element={<AdminOrders />}
+            />
+            <Route
               path="pdfs"
               element={
                 hasPermission('banners.manage') || hasPermission('pdfs.manage') ? (
@@ -468,6 +498,10 @@ function AdminShell() {
                   <Navigate to="/admin/dashboard" replace />
                 )
               }
+            />
+            <Route
+              path="reports"
+              element={<AdminReports />}
             />
             <Route
               path="roles"

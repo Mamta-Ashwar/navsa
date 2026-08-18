@@ -12,6 +12,7 @@ import {
 import NoticeModal from '../components/NoticeModal'
 import { getProductImageUrl } from '../utils/imageHelper'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
+import { useAuth } from '../context/AuthContext'
 import './ProductDetail.css'
 
 function hasValidEanChecksum(digits) {
@@ -138,6 +139,7 @@ function calculateIndicativeBbd(shelfLifeDays) {
 export default function ProductDetail() {
   const { id } = useParams()
   const { formatPrice: money } = useCurrency()
+  const { isAuthenticated } = useAuth()
 
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -755,11 +757,20 @@ export default function ProductDetail() {
 
             <h1 className="product-title">{product.description}</h1>
 
-            <div className="product-price">{money(product.price)}</div>
-
-            <div className="product-subtitle">
-              Per case, ex warehouse
-            </div>
+            {isAuthenticated ? (
+              <>
+                <div className="product-price">{money(product.price)}</div>
+                <div className="product-subtitle">
+                  Per case, ex warehouse
+                </div>
+              </>
+            ) : (
+              <div style={{ margin: '16px 0', padding: '14px 18px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '12px' }}>
+                <span style={{ color: '#38bdf8', fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🔒 Trade Access Only — Login to view wholesale price
+                </span>
+              </div>
+            )}
 
             <div className="product-detail-table">
               <DetailRow
@@ -803,84 +814,98 @@ export default function ProductDetail() {
               />
             </div>
 
-            <div className="quantity-card">
-              <div className="quantity-title">Quantity Options</div>
+            {isAuthenticated ? (
+              <div className="quantity-card">
+                <div className="quantity-title">Quantity Options</div>
 
-              <QtyRow
-                label="Case"
-                desc={`${unitsPerCase} Units per Case`}
-                qty={caseQty}
-                onMinus={() =>
-                  setCaseQty(current => Math.max(0, current - 1))
-                }
-                onPlus={() =>
-                  setCaseQty(current => current + 1)
-                }
-                disabled={!isCaseAllowed}
-              />
+                <QtyRow
+                  label="Case"
+                  desc={`${unitsPerCase} Units per Case`}
+                  qty={caseQty}
+                  onMinus={() =>
+                    setCaseQty(current => Math.max(0, current - 1))
+                  }
+                  onPlus={() =>
+                    setCaseQty(current => current + 1)
+                  }
+                  disabled={!isCaseAllowed}
+                />
 
-              <QtyRow
-                label="Layer"
-                desc={`${Number(
-                  product.layer_quantity || 0
-                )} Cases per Layer`}
-                qty={layerQty}
-                onMinus={() =>
-                  setLayerQty(current => Math.max(0, current - 1))
-                }
-                onPlus={() =>
-                  setLayerQty(current => current + 1)
-                }
-                disabled={
-                  !isLayerAllowed ||
-                  Number(product.layer_quantity || 0) <= 0
-                }
-              />
+                <QtyRow
+                  label="Layer"
+                  desc={`${Number(
+                    product.layer_quantity || 0
+                  )} Cases per Layer`}
+                  qty={layerQty}
+                  onMinus={() =>
+                    setLayerQty(current => Math.max(0, current - 1))
+                  }
+                  onPlus={() =>
+                    setLayerQty(current => current + 1)
+                  }
+                  disabled={
+                    !isLayerAllowed ||
+                    Number(product.layer_quantity || 0) <= 0
+                  }
+                />
 
-              <QtyRow
-                label="Pallet"
-                desc={`${Number(
-                  product.pallet_quantity || 0
-                )} Cases per Pallet`}
-                qty={palletQty}
-                onMinus={() =>
-                  setPalletQty(current => Math.max(0, current - 1))
-                }
-                onPlus={() =>
-                  setPalletQty(current => current + 1)
-                }
-                disabled={
-                  !isPalletAllowed ||
-                  Number(product.pallet_quantity || 0) <= 0
-                }
-              />
+                <QtyRow
+                  label="Pallet"
+                  desc={`${Number(
+                    product.pallet_quantity || 0
+                  )} Cases per Pallet`}
+                  qty={palletQty}
+                  onMinus={() =>
+                    setPalletQty(current => Math.max(0, current - 1))
+                  }
+                  onPlus={() =>
+                    setPalletQty(current => current + 1)
+                  }
+                  disabled={
+                    !isPalletAllowed ||
+                    Number(product.pallet_quantity || 0) <= 0
+                  }
+                />
 
-              <div className="total-strip">
-                <span>
-                  <strong>{totalCases}</strong> total cases
-                </span>
+                <div className="total-strip">
+                  <span>
+                    <strong>{totalCases}</strong> total cases
+                  </span>
 
-                <span>
-                  <strong>
-                    {money(
-                      totalCases * Number(product.price || 0)
-                    )}
-                  </strong>
-                </span>
-              </div>
-
-              <div className="calculation-strip">
-                <div>
-                  <span>Total Weight</span>
-                  <strong>{selectedWeight.toFixed(3)} kg</strong>
+                  <span>
+                    <strong>
+                      {money(
+                        totalCases * Number(product.price || 0)
+                      )}
+                    </strong>
+                  </span>
                 </div>
 
-                <div>
-                  <span>Total CBM</span>
-                  <strong>{selectedVolume.toFixed(6)} m³</strong>
+                <div className="calculation-strip">
+                  <div>
+                    <span>Total Weight</span>
+                    <strong>{selectedWeight.toFixed(3)} kg</strong>
+                  </div>
+
+                  <div>
+                    <span>Total CBM</span>
+                    <strong>{selectedVolume.toFixed(6)} m³</strong>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', marginTop: '24px' }}>
+                <div style={{ fontSize: '36px', marginBottom: '12px' }}>🔒</div>
+                <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Please Log In to View Products</h3>
+                <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '24px', maxWidth: '400px', margin: '0 auto 24px' }}>
+                  Access is limited to approved trade/wholesale customers. Please log in or register your business to place orders.
+                </p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                  <Link to="/login" className="admin-btn admin-btn-primary" style={{ padding: '10px 24px', textDecoration: 'none' }}>Log In</Link>
+                  <Link to="/register" className="admin-btn admin-btn-ghost" style={{ padding: '10px 24px', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)' }}>Become a Customer</Link>
+                </div>
+              </div>
+            )}
 
             {!hasShipping && (
               <div className="shipping-required-notice">

@@ -6,6 +6,17 @@ import {
   FaSearch,
   FaShoppingBasket,
   FaUser,
+  FaSignOutAlt,
+  FaTag,
+  FaBolt,
+  FaCalendarAlt,
+  FaClock,
+  FaStar,
+  FaTrashAlt,
+  FaFileAlt,
+  FaHome,
+  FaHistory,
+  FaThLarge,
 } from 'react-icons/fa'
 import {
   MdVisibility,
@@ -13,6 +24,7 @@ import {
 } from 'react-icons/md'
 import { useCart } from '../../context/CartContext'
 import { useCurrency } from '../../utils/currency'
+import { useAuth } from '../../context/AuthContext'
 import './HeaderMain.css'
 
 const CATEGORIES = [
@@ -63,13 +75,16 @@ export default function HeaderMain() {
   const navigate = useNavigate()
   const { wishlistCount, basketCount, basketTotal } = useCart()
   const { formatPrice } = useCurrency()
+  const { user, logout } = useAuth()
 
   const searchAreaRef = useRef(null)
   const searchRequestRef = useRef(null)
+  const profileMenuRef = useRef(null)
 
   const [shopOpen, setShopOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isSticky, setIsSticky] = useState(false)
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
 
   const [search, setSearch] = useState('')
   const [suggestions, setSuggestions] = useState([])
@@ -171,6 +186,12 @@ export default function HeaderMain() {
         setShowSuggestions(false)
         setActiveSuggestion(-1)
       }
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target)
+      ) {
+        setProfileDropdownOpen(false)
+      }
     }
 
     function handleEscape(event) {
@@ -179,6 +200,7 @@ export default function HeaderMain() {
         setActiveSuggestion(-1)
         setShopOpen(false)
         setMobileOpen(false)
+        setProfileDropdownOpen(false)
       }
     }
 
@@ -361,13 +383,71 @@ export default function HeaderMain() {
         </Link>
 
         <div className="header-main__brand-side header-main__brand-side--right">
-          <Link
-            to="/account/login"
-            className="header-main__account-button"
-          >
-            <FaUser />
-            <span>Customer Login</span>
-          </Link>
+          {user ? (
+            <div className="header-main__profile-wrapper" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="header-main__account-button header-main__profile-button"
+                onClick={() => setProfileDropdownOpen(current => !current)}
+                aria-expanded={profileDropdownOpen}
+              >
+                <FaUser />
+                <span>{user.name || user.company_name || 'My Profile'}</span>
+                <FaChevronDown style={{ fontSize: '10px', marginLeft: '2px' }} />
+              </button>
+
+              {profileDropdownOpen && (
+                <div className="header-main__profile-dropdown">
+                  <div className="header-main__profile-header">
+                    <strong>{user.name || 'Trade Customer'}</strong>
+                    <small>{user.email}</small>
+                  </div>
+
+                  <div className="header-main__profile-menu">
+                    <Link
+                      to="/profile"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="header-main__profile-menu-item"
+                    >
+                      <FaUser />
+                      <span>My Profile</span>
+                    </Link>
+
+                    {(user.role === 'admin' || user.role === 'super-admin' || user.is_admin) && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="header-main__profile-menu-item"
+                      >
+                        <span>Admin Dashboard</span>
+                      </Link>
+                    )}
+
+                    <button
+                      type="button"
+                      className="header-main__profile-menu-item header-main__profile-menu-logout"
+                      onClick={() => {
+                        setProfileDropdownOpen(false)
+                        logout()
+                        navigate('/')
+                      }}
+                    >
+                      <FaSignOutAlt />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              to="/account/login"
+              className="header-main__account-button"
+            >
+              <FaUser />
+              <span>Customer Login</span>
+            </Link>
+          )}
 
           <img
             src="/logos/award.jpg"
@@ -417,71 +497,113 @@ export default function HeaderMain() {
 
             {shopOpen && (
               <div className="header-main__mega-menu">
-                <section>
-                  <h3>Shop by Category</h3>
+                <div className="header-main__mega-top">
+                  <section className="header-main__mega-categories">
+                    <h3>Product Categories</h3>
 
-                  <div className="header-main__category-grid">
-                    {CATEGORIES.map(category => (
-                      <Link
-                        key={category.db}
-                        to={`/shop?category=${encodeURIComponent(
-                          category.db
-                        )}`}
-                        onClick={closeMenus}
-                      >
-                        {category.label}
+                    <div className="header-main__category-grid">
+                      {CATEGORIES.map(category => (
+                        <Link
+                          key={category.db}
+                          to={`/shop?category=${encodeURIComponent(
+                            category.db
+                          )}`}
+                          onClick={closeMenus}
+                        >
+                          {category.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="header-main__mega-quickaccess">
+                    <h3>Quick Access</h3>
+
+                    <div className="header-main__mega-quick-list">
+                      <Link to="/" onClick={closeMenus}>
+                        <FaHome /> My Home
                       </Link>
-                    ))}
-                  </div>
-                </section>
 
-                <section>
-                  <h3>Quick Access</h3>
+                      <Link to="/wishlist" onClick={closeMenus}>
+                        <FaHeart /> My Favorites
+                      </Link>
 
-                  <div className="header-main__mega-list">
-                    <Link to="/" onClick={closeMenus}>
-                      My Home
-                    </Link>
+                      <Link to="/shop" onClick={closeMenus}>
+                        <FaHistory /> Previous Products
+                      </Link>
 
-                    <Link to="/wishlist" onClick={closeMenus}>
-                      My Favourites
-                    </Link>
+                      <Link to="/shop" onClick={closeMenus}>
+                        <FaThLarge /> All Products
+                      </Link>
+                    </div>
+                  </section>
+                </div>
 
-                    <Link to="/shop" onClick={closeMenus}>
-                      All Products
-                    </Link>
-                  </div>
-                </section>
+                <div className="header-main__promo-grid">
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-edlp"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaTag /> EVERY DAY LOW PRICE
+                  </button>
 
-                <section>
-                  <h3>Promotions</h3>
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-presell"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaBolt /> PRESELL
+                  </button>
 
-                  <div className="header-main__mega-list">
-                    <a
-                      href="/deals/deal1.pdf"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      NAVSA P10
-                    </a>
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-monthly"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaCalendarAlt /> MONTHLY PROMOTIONS
+                  </button>
 
-                    <a
-                      href="/deals/deal2.pdf"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      NAVSA P11
-                    </a>
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-weekly"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaClock /> WEEKLY DEALS
+                  </button>
 
-                    <a
-                      href="/deals/deal3.pdf"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      NAVSA Christmas 2026
-                    </a>
-                  </div>
-                </section>
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-seasonal"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaTag /> SEASONAL OFFERS
+                  </button>
+
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-new"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaStar /> NEW
+                  </button>
+
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-clearance"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaTrashAlt /> CLEARANCE
+                  </button>
+
+                  <button
+                    type="button"
+                    className="header-main__promo-btn promo-latest"
+                    onClick={e => e.preventDefault()}
+                  >
+                    <FaFileAlt /> LATEST DEALS
+                  </button>
+                </div>
               </div>
             )}
           </div>
