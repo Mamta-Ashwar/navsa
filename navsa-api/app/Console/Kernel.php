@@ -15,7 +15,13 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('inspire')->hourly();
+        // Optional second layer of protection. NAVSA is international, so
+        // date-only Obsolete values use UTC as the neutral global cut-off.
+        // Normal website/admin requests also enforce expiry automatically.
+        $schedule->command('products:expire-obsolete')
+            ->dailyAt('00:05')
+            ->timezone('UTC')
+            ->withoutOverlapping();
     }
 
     /**

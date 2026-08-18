@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState } from 'react';
+import { logoutAdmin } from '../services/adminApi';
 
 const AuthContext = createContext(null);
 
@@ -44,7 +45,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('admin_permissions', JSON.stringify(permissions));
   };
 
-  const logout = () => {
+  const clearLocalSession = () => {
     setUser(null);
     setToken(null);
     setRoles([]);
@@ -54,6 +55,24 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_roles');
     localStorage.removeItem('admin_permissions');
+  };
+
+  const logout = async () => {
+    const tokenToRevoke =
+      token || localStorage.getItem('admin_token') || null;
+
+    if (!tokenToRevoke) {
+      clearLocalSession();
+      return;
+    }
+
+    // Revoke the current Sanctum token on the server first.
+    // If revocation fails because of a network/server problem, keep the
+    // local session so the user can retry instead of showing a false
+    // "securely signed out" state while the token is still valid.
+    await logoutAdmin(tokenToRevoke);
+
+    clearLocalSession();
   };
 
   // Permission verification helpers

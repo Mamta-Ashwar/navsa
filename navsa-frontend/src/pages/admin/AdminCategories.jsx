@@ -1,182 +1,1020 @@
-import { useEffect, useState, useCallback } from 'react'
-import { getCategories, createCategory, updateCategory, softDeleteCategory, hardDeleteCategory } from '../../services/adminApi'
-import { Plus, Edit2, Trash2, EyeOff, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Check,
+  CheckCircle2,
+  Edit2,
+  Eye,
+  EyeOff,
+  FolderTree,
+  ImageIcon,
+  Layers3,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
+import ConfirmModal from '../../components/common/ConfirmModal'
+import {
+  bulkHardDeleteCategories,
+  bulkHardDeleteSubCategories,
+  bulkHideCategories,
+  bulkHideSubCategories,
+  bulkRestoreCategories,
+  bulkRestoreSubCategories,
+  bulkShowCategories,
+  bulkShowSubCategories,
+  bulkSoftDeleteCategories,
+  bulkSoftDeleteSubCategories,
+  createCategory,
+  createSubCategory,
+  getAdminSubCategories,
+  getCategories,
+  hardDeleteCategory,
+  hardDeleteSubCategory,
+  restoreCategory,
+  restoreSubCategory,
+  softDeleteCategory,
+  softDeleteSubCategory,
+  updateCategory,
+  updateSubCategory,
+  uploadCategoryImage,
+} from '../../services/adminApi'
+import './AdminCategories.css'
 
-function CategoryDetailModal({ cat, onClose }) {
-  const rows = [
-    ['ID',            cat.id],
-    ['Category Name', cat.category_name],
-    ['Status',        cat.status ? 'Active' : 'Disabled'],
-    ['Products',      cat.products_count ?? 0],
-    ['Created',       cat.created_at ? new Date(cat.created_at).toLocaleString() : '—'],
-    ['Last Updated',  cat.updated_at ? new Date(cat.updated_at).toLocaleString() : '—'],
-  ]
+const MAIN_TAB = 'main'
+const SUB_TAB = 'sub'
+const STATUS_FILTERS = ['all', 'active', 'hidden', 'deleted']
+
+const asBool = (value) => value === true || value === 1 || value === '1'
+const isDeleted = (row) => asBool(row?.deleted)
+const isActive = (row) => !isDeleted(row) && asBool(row?.status)
+const isHidden = (row) => !isDeleted(row) && !asBool(row?.status)
+
+function statusLabel(row) {
+  if (isDeleted(row)) return 'Deleted'
+  return asBool(row?.status) ? 'Active' : 'Hidden'
+}
+
+function rowName(tab, row) {
+  return tab === MAIN_TAB ? row.category_name : row.sub_category_name
+}
+
+function categoryImageUrl(row) {
+  const value = String(row?.image_url || row?.image_path || '').trim()
+  if (!value) return ''
+  return value
+}
+
+function MainCategoryEdit({ row, busy, onCancel, onSave }) {
+  const [name, setName] = useState(row.category_name || '')
+
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000, padding:'20px' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'#1e293b', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'16px', width:'100%', maxWidth:'420px', padding:'28px', position:'relative' }}>
-        <button onClick={onClose} style={{ position:'absolute', top:'16px', right:'16px', background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}><X size={20}/></button>
-        <div style={{ display:'flex', alignItems:'center', gap:'14px', marginBottom:'24px', paddingBottom:'20px', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ width:'50px', height:'50px', borderRadius:'12px', background:'linear-gradient(135deg,#10b981,#059669)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'22px' }}>🏷️</div>
-          <div>
-            <div style={{ color:'#fff', fontWeight:700, fontSize:'18px' }}>{cat.category_name}</div>
-            <span style={{ marginTop:'4px', display:'inline-block', background: cat.status ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: cat.status ? '#10b981' : '#ef4444', fontSize:'11px', fontWeight:700, padding:'2px 10px', borderRadius:'10px' }}>{cat.status ? 'ACTIVE' : 'DISABLED'}</span>
-          </div>
-        </div>
-        <div style={{ display:'grid', gap:'12px' }}>
-          {rows.map(([label, val]) => (
-            <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'12px' }}>
-              <span style={{ color:'#94a3b8', fontSize:'12px', fontWeight:600, flexShrink:0 }}>{label}</span>
-              <span style={{ color:'#fff', fontSize:'13px', textAlign:'right' }}>{String(val)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="admin-categories-edit admin-categories-edit--main">
+      <input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') onSave({ category_name: name.trim() })
+          if (event.key === 'Escape') onCancel()
+        }}
+        disabled={busy}
+        autoFocus
+      />
+      <button
+        type="button"
+        className="is-save"
+        disabled={busy || !name.trim()}
+        onClick={() => onSave({ category_name: name.trim() })}
+        title="Save category"
+      >
+        <Check size={15} />
+      </button>
+      <button type="button" disabled={busy} onClick={onCancel} title="Cancel editing">
+        <X size={15} />
+      </button>
     </div>
   )
 }
 
-function CategoryRow({ category, onRefresh, onView }) {
-  const [editing, setEditing] = useState(false)
-  const [name, setName]       = useState(category.category_name)
-  const [busy, setBusy]       = useState(false)
+function SubCategoryEdit({ row, categories, busy, onCancel, onSave }) {
+  const [name, setName] = useState(row.sub_category_name || '')
+  const [groupCode, setGroupCode] = useState(row.group_code || '')
+  const [categoryId, setCategoryId] = useState(String(row.category_id || ''))
 
-  const save = async () => {
-    if (!name.trim()) return
-    setBusy(true)
-    try { await updateCategory(category.id, { category_name: name.trim(), status: category.status }); setEditing(false); onRefresh() }
-    catch (e) { alert(e.message) }
-    finally { setBusy(false) }
-  }
-
-  const toggleStatus = async () => {
-    setBusy(true)
-    try { await updateCategory(category.id, { category_name: category.category_name, status: category.status ? 0 : 1 }); onRefresh() }
-    catch (e) { alert(e.message) }
-    finally { setBusy(false) }
-  }
-
-  const doSoft = async () => {
-    if (!confirm('Soft-delete this category? Products will lose category visibility.')) return
-    setBusy(true)
-    try { await softDeleteCategory(category.id); onRefresh() }
-    catch (e) { alert(e.message) }
-    finally { setBusy(false) }
-  }
-
-  const doHard = async () => {
-    if (!confirm('⚠ PERMANENTLY delete this category? This cannot be undone!')) return
-    setBusy(true)
-    try { await hardDeleteCategory(category.id); onRefresh() }
-    catch (e) { alert(e.message) }
-    finally { setBusy(false) }
+  const save = () => {
+    if (!name.trim() || !groupCode.trim() || !categoryId) return
+    onSave({
+      category_id: Number(categoryId),
+      sub_category_name: name.trim(),
+      group_code: groupCode.trim().toUpperCase(),
+    })
   }
 
   return (
-    <tr onClick={onView} style={{ cursor:'pointer' }}>
-      <td onClick={e => e.stopPropagation()}>
-        {editing ? (
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <input value={name} onChange={e => setName(e.target.value)} className="admin-input-field" style={{ width: '200px' }}
-              onKeyDown={e => e.key === 'Enter' && save()} autoFocus />
-            <button onClick={save} disabled={busy} className="admin-btn admin-btn-primary" style={{ padding: '6px 12px' }}>✓</button>
-            <button onClick={() => setEditing(false)} className="admin-btn admin-btn-ghost" style={{ padding: '6px 10px', border: '1px solid rgba(255,255,255,0.1)' }}>✕</button>
-          </div>
-        ) : (
-          <div style={{ color: '#fff', fontWeight: 600, fontSize: '14px' }}>{category.category_name}</div>
-        )}
-      </td>
-      <td style={{ color: '#94a3b8', fontWeight: 600 }}>
-        {category.products_count ?? 0}
-      </td>
-      <td>
-        <span className={`admin-badge ${category.status ? 'admin-badge-success' : 'admin-badge-warning'}`}>
-          {category.status ? 'Active' : 'Disabled'}
-        </span>
-      </td>
-      <td onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {!editing && (
-            <button onClick={(e) => { e.stopPropagation(); setEditing(true) }} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#3b82f6' }}>
-              <Edit2 size={16} />
-            </button>
-          )}
-          <label className="admin-switch" style={{ alignSelf: 'center', margin: '0 8px' }}>
-            <input type="checkbox" checked={!!category.status} onChange={toggleStatus} disabled={busy} />
-            <span className="admin-slider"></span>
-          </label>
-          <button onClick={(e) => { e.stopPropagation(); doSoft() }} disabled={busy} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#f59e0b' }}>
-            <EyeOff size={16} />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); doHard() }} disabled={busy} className="admin-btn admin-btn-ghost" style={{ padding: '0.5rem', color: '#ef4444' }}>
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </td>
-    </tr>
+    <div className="admin-categories-edit admin-categories-edit--sub">
+      <input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        placeholder="Subcategory name"
+        disabled={busy}
+        autoFocus
+      />
+      <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} disabled={busy}>
+        {categories
+          .filter((category) => !isDeleted(category))
+          .map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.category_name}
+            </option>
+          ))}
+      </select>
+      <input
+        value={groupCode}
+        onChange={(event) => setGroupCode(event.target.value.toUpperCase())}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') save()
+          if (event.key === 'Escape') onCancel()
+        }}
+        placeholder="Group code"
+        maxLength={10}
+        disabled={busy}
+      />
+      <button
+        type="button"
+        className="is-save"
+        disabled={busy || !name.trim() || !groupCode.trim() || !categoryId}
+        onClick={save}
+        title="Save subcategory"
+      >
+        <Check size={15} />
+      </button>
+      <button type="button" disabled={busy} onClick={onCancel} title="Cancel editing">
+        <X size={15} />
+      </button>
+    </div>
   )
 }
 
 export default function AdminCategories() {
+  const [tab, setTab] = useState(MAIN_TAB)
   const [categories, setCategories] = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [newName, setNewName]       = useState('')
-  const [adding, setAdding]         = useState(false)
-  const [selected, setSelected]     = useState(null)
+  const [subCategories, setSubCategories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [editingId, setEditingId] = useState(null)
+  const [rowBusyId, setRowBusyId] = useState(null)
+  const [imageBusyId, setImageBusyId] = useState(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [message, setMessage] = useState(null)
+  const messageTimerRef = useRef(null)
+
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [newSubName, setNewSubName] = useState('')
+  const [newSubGroupCode, setNewSubGroupCode] = useState('')
+  const [newSubCategoryId, setNewSubCategoryId] = useState('')
+
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    action: null,
+    row: null,
+    bulk: false,
+  })
+
+  const showMessage = useCallback((type, text) => {
+    setMessage({ type, text })
+    window.clearTimeout(messageTimerRef.current)
+    messageTimerRef.current = window.setTimeout(() => setMessage(null), 5000)
+  }, [])
+
+  useEffect(() => () => window.clearTimeout(messageTimerRef.current), [])
 
   const load = useCallback(async () => {
     setLoading(true)
-    try { const res = await getCategories(); setCategories(res) }
-    catch (e) { alert(e.message) }
-    finally { setLoading(false) }
-  }, [])
+    try {
+      const [categoryRows, subCategoryRows] = await Promise.all([
+        getCategories({ show_deleted: 1 }),
+        getAdminSubCategories({ show_deleted: 1 }),
+      ])
 
-  useEffect(() => { load() }, [load])
+      const nextCategories = Array.isArray(categoryRows) ? categoryRows : []
+      const nextSubCategories = Array.isArray(subCategoryRows) ? subCategoryRows : []
 
-  const addCategory = async () => {
-    if (!newName.trim()) return
-    setAdding(true)
-    try { await createCategory(newName.trim()); setNewName(''); load() }
-    catch (e) { alert(e.message) }
-    finally { setAdding(false) }
+      setCategories(nextCategories)
+      setSubCategories(nextSubCategories)
+
+      const firstAvailable = nextCategories.find((category) => !isDeleted(category))
+      if (firstAvailable) {
+        setNewSubCategoryId((current) => current || String(firstAvailable.id))
+      }
+    } catch (error) {
+      showMessage('error', error.message || 'Unable to load categories.')
+    } finally {
+      setLoading(false)
+    }
+  }, [showMessage])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const rows = tab === MAIN_TAB ? categories : subCategories
+
+  const counts = useMemo(() => ({
+    available: rows.filter((row) => !isDeleted(row)).length,
+    active: rows.filter(isActive).length,
+    hidden: rows.filter(isHidden).length,
+    deleted: rows.filter(isDeleted).length,
+  }), [rows])
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase()
+
+    return rows.filter((row) => {
+      const matchesStatus =
+        statusFilter === 'deleted'
+          ? isDeleted(row)
+          : statusFilter === 'active'
+            ? isActive(row)
+            : statusFilter === 'hidden'
+              ? isHidden(row)
+              : !isDeleted(row)
+
+      if (!matchesStatus) return false
+      if (!query) return true
+
+      if (tab === MAIN_TAB) {
+        return (
+          (row.category_name || '').toLowerCase().includes(query)
+          || String(row.id).includes(query)
+        )
+      }
+
+      return (
+        (row.sub_category_name || '').toLowerCase().includes(query)
+        || (row.group_code || '').toLowerCase().includes(query)
+        || (row.category?.category_name || '').toLowerCase().includes(query)
+        || String(row.id).includes(query)
+      )
+    })
+  }, [rows, search, statusFilter, tab])
+
+  const filteredIds = useMemo(
+    () => filteredRows.map((row) => Number(row.id)),
+    [filteredRows],
+  )
+
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
+
+  const switchTab = (nextTab) => {
+    setTab(nextTab)
+    setSearch('')
+    setStatusFilter('all')
+    setSelectedIds(new Set())
+    setEditingId(null)
   }
 
+  const changeFilter = (filter) => {
+    setStatusFilter(filter)
+    setSelectedIds(new Set())
+    setEditingId(null)
+  }
+
+  const toggleSelected = (id) => {
+    const numericId = Number(id)
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(numericId)) next.delete(numericId)
+      else next.add(numericId)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (allFilteredSelected) filteredIds.forEach((id) => next.delete(id))
+      else filteredIds.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
+  const addMainCategory = async () => {
+    const name = newCategoryName.trim()
+    if (!name || adding) return
+    setAdding(true)
+    try {
+      await createCategory(name)
+      setNewCategoryName('')
+      showMessage('success', `“${name}” was added as a main category.`)
+      await load()
+    } catch (error) {
+      showMessage('error', error.message)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const addSubCategory = async () => {
+    const name = newSubName.trim()
+    const groupCode = newSubGroupCode.trim().toUpperCase()
+    const categoryId = Number(newSubCategoryId)
+    if (!name || !groupCode || !categoryId || adding) return
+
+    setAdding(true)
+    try {
+      await createSubCategory({
+        category_id: categoryId,
+        sub_category_name: name,
+        group_code: groupCode,
+      })
+      setNewSubName('')
+      setNewSubGroupCode('')
+      showMessage('success', `“${name}” was added as a subcategory.`)
+      await load()
+    } catch (error) {
+      showMessage('error', error.message)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const changeMainCategoryImage = async (row, file) => {
+    if (!file || imageBusyId) return
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+    if (!allowedTypes.includes(file.type)) {
+      showMessage('error', 'Please choose a JPG, PNG or WebP category image.')
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      showMessage('error', 'Category images must be 10 MB or smaller.')
+      return
+    }
+
+    setImageBusyId(Number(row.id))
+    try {
+      const payload = new FormData()
+      payload.append('image', file)
+      await uploadCategoryImage(row.id, payload)
+      showMessage('success', `Image for “${row.category_name}” was updated.`)
+      await load()
+    } catch (error) {
+      showMessage('error', error.message || 'Unable to upload category image.')
+    } finally {
+      setImageBusyId(null)
+    }
+  }
+
+  const saveRow = async (row, data) => {
+    if (rowBusyId) return
+    setRowBusyId(Number(row.id))
+    try {
+      if (tab === MAIN_TAB) {
+        await updateCategory(row.id, {
+          category_name: data.category_name,
+          status: asBool(row.status) ? 1 : 0,
+        })
+        showMessage('success', `“${data.category_name}” was updated.`)
+      } else {
+        await updateSubCategory(row.id, {
+          category_id: data.category_id,
+          sub_category_name: data.sub_category_name,
+          group_code: data.group_code,
+          status: asBool(row.status) ? 1 : 0,
+        })
+        showMessage('success', `“${data.sub_category_name}” was updated.`)
+      }
+      setEditingId(null)
+      await load()
+    } catch (error) {
+      showMessage('error', error.message)
+    } finally {
+      setRowBusyId(null)
+    }
+  }
+
+  const requestAction = (row, action) => {
+    setConfirmDialog({ open: true, action, row, bulk: false })
+  }
+
+  const requestBulkAction = (action) => {
+    if (selectedIds.size === 0 || bulkBusy) return
+    setConfirmDialog({ open: true, action, row: null, bulk: true })
+  }
+
+  const closeConfirmation = () => {
+    if (bulkBusy || rowBusyId) return
+    setConfirmDialog({ open: false, action: null, row: null, bulk: false })
+  }
+
+  const executeConfirmation = async () => {
+    const { action, row, bulk } = confirmDialog
+    if (!action) return
+
+    const payload = { ids: [...selectedIds] }
+
+    try {
+      if (bulk) {
+        setBulkBusy(true)
+
+        const actions = tab === MAIN_TAB
+          ? {
+              show: () => bulkShowCategories(payload),
+              hide: () => bulkHideCategories(payload),
+              delete: () => bulkSoftDeleteCategories(payload),
+              restore: () => bulkRestoreCategories(payload),
+              'permanent-delete': () => bulkHardDeleteCategories(payload),
+            }
+          : {
+              show: () => bulkShowSubCategories(payload),
+              hide: () => bulkHideSubCategories(payload),
+              delete: () => bulkSoftDeleteSubCategories(payload),
+              restore: () => bulkRestoreSubCategories(payload),
+              'permanent-delete': () => bulkHardDeleteSubCategories(payload),
+            }
+
+        const result = await actions[action]?.()
+        if (!result) throw new Error('Unsupported bulk action.')
+        showMessage('success', result.message || 'Selected records were updated.')
+        setSelectedIds(new Set())
+      } else {
+        setRowBusyId(Number(row.id))
+
+        if (tab === MAIN_TAB) {
+          if (action === 'show' || action === 'hide') {
+            await updateCategory(row.id, {
+              category_name: row.category_name,
+              status: action === 'show' ? 1 : 0,
+            })
+          } else if (action === 'delete') {
+            await softDeleteCategory(row.id)
+          } else if (action === 'restore') {
+            await restoreCategory(row.id)
+          } else if (action === 'permanent-delete') {
+            await hardDeleteCategory(row.id)
+          }
+        } else {
+          if (action === 'show' || action === 'hide') {
+            await updateSubCategory(row.id, {
+              category_id: Number(row.category_id),
+              sub_category_name: row.sub_category_name,
+              group_code: row.group_code,
+              status: action === 'show' ? 1 : 0,
+            })
+          } else if (action === 'delete') {
+            await softDeleteSubCategory(row.id)
+          } else if (action === 'restore') {
+            await restoreSubCategory(row.id)
+          } else if (action === 'permanent-delete') {
+            await hardDeleteSubCategory(row.id)
+          }
+        }
+
+        const actionText = {
+          show: 'shown',
+          hide: 'hidden',
+          delete: 'moved to Deleted',
+          restore: 'restored as hidden',
+          'permanent-delete': 'permanently deleted',
+        }[action]
+        showMessage('success', `“${rowName(tab, row)}” was ${actionText}.`)
+      }
+
+      setConfirmDialog({ open: false, action: null, row: null, bulk: false })
+      await load()
+    } catch (error) {
+      setConfirmDialog({ open: false, action: null, row: null, bulk: false })
+      showMessage('error', error.message || 'The category action could not be completed.')
+    } finally {
+      setBulkBusy(false)
+      setRowBusyId(null)
+    }
+  }
+
+  const actionMeta = useMemo(() => {
+    const { action, row, bulk } = confirmDialog
+    const target = tab === MAIN_TAB ? 'category' : 'subcategory'
+    const targetPlural = tab === MAIN_TAB ? 'categories' : 'subcategories'
+    const count = selectedIds.size
+    const name = row ? rowName(tab, row) : ''
+
+    if (action === 'show') {
+      return {
+        title: bulk ? `Show ${count} selected ${targetPlural}?` : `Show this ${target}?`,
+        message: bulk ? `${count.toLocaleString()} selected ${targetPlural}` : <strong>{name}</strong>,
+        description: tab === MAIN_TAB
+          ? 'The selected main category will become available publicly. Its active subcategories can appear again too.'
+          : 'The selected subcategory will become available publicly when its main category is also active.',
+        confirmText: bulk ? 'Show selected' : `Show ${target}`,
+        eyebrow: `SHOW ${target.toUpperCase()}`,
+        icon: <Eye size={29} />,
+        variant: 'success',
+      }
+    }
+
+    if (action === 'hide') {
+      return {
+        title: bulk ? `Hide ${count} selected ${targetPlural}?` : `Hide this ${target}?`,
+        message: bulk ? `${count.toLocaleString()} selected ${targetPlural}` : <strong>{name}</strong>,
+        description: tab === MAIN_TAB
+          ? 'Products stay assigned. The main category and its subcategories stop being offered through the public category navigation until shown again.'
+          : 'Products stay assigned. The subcategory is hidden publicly until shown again.',
+        confirmText: bulk ? 'Hide selected' : `Hide ${target}`,
+        eyebrow: `HIDE ${target.toUpperCase()}`,
+        icon: <EyeOff size={29} />,
+        variant: 'warning',
+      }
+    }
+
+    if (action === 'delete') {
+      return {
+        title: bulk ? `Move ${count} selected ${targetPlural} to Deleted?` : `Move this ${target} to Deleted?`,
+        message: bulk ? `${count.toLocaleString()} selected ${targetPlural}` : <strong>{name}</strong>,
+        description: 'This is recoverable. Existing products keep their category IDs. The record can be restored later from the Deleted filter.',
+        confirmText: bulk ? 'Move selected to Deleted' : 'Move to Deleted',
+        eyebrow: `DELETE ${target.toUpperCase()}`,
+        icon: <Trash2 size={29} />,
+        variant: 'danger',
+      }
+    }
+
+    if (action === 'restore') {
+      return {
+        title: bulk ? `Restore ${count} selected ${targetPlural}?` : `Restore this ${target}?`,
+        message: bulk ? `${count.toLocaleString()} selected ${targetPlural}` : <strong>{name}</strong>,
+        description: 'Restored records return as Hidden, not public. Use Show afterwards when you are ready to make them visible.',
+        confirmText: bulk ? 'Restore selected' : `Restore ${target}`,
+        eyebrow: `RESTORE ${target.toUpperCase()}`,
+        icon: <RotateCcw size={29} />,
+        variant: 'success',
+      }
+    }
+
+    return {
+      title: bulk ? `Permanently delete ${count} selected ${targetPlural}?` : `Permanently delete this ${target}?`,
+      message: bulk ? `${count.toLocaleString()} selected ${targetPlural}` : <strong>{name}</strong>,
+      description: tab === MAIN_TAB
+        ? 'This cannot be undone. Permanent deletion is blocked if products or subcategories are still assigned to a main category.'
+        : 'This cannot be undone. Permanent deletion is blocked if products are still assigned to a subcategory.',
+      confirmText: bulk ? 'Delete selected permanently' : 'Delete permanently',
+      eyebrow: 'PERMANENT DELETE',
+      icon: <Trash2 size={29} />,
+      variant: 'danger',
+    }
+  }, [confirmDialog, selectedIds.size, tab])
+
+  const currentTabTitle = tab === MAIN_TAB ? 'Main Categories' : 'Subcategories'
+
   return (
-    <div>
-      {selected && <CategoryDetailModal cat={selected} onClose={() => setSelected(null)} />}
-      <div className="admin-flex-between mb-6">
+    <div className="admin-categories-page">
+      <ConfirmModal
+        open={confirmDialog.open}
+        title={actionMeta.title}
+        message={actionMeta.message}
+        description={actionMeta.description}
+        confirmText={actionMeta.confirmText}
+        cancelText="Cancel"
+        eyebrow={actionMeta.eyebrow}
+        icon={actionMeta.icon}
+        variant={actionMeta.variant}
+        loading={bulkBusy || Boolean(rowBusyId)}
+        closeOnBackdrop={!bulkBusy && !rowBusyId}
+        onConfirm={executeConfirmation}
+        onClose={closeConfirmation}
+      />
+
+      <div className="admin-categories-heading admin-flex-between mb-6">
         <div>
-          <h1 style={{ marginBottom: '0.25rem' }}>Categories</h1>
-          <p style={{ color: '#94a3b8' }}>Manage product categories</p>
+          <h1>Categories</h1>
+          <p>Manage main categories, subcategories, visibility and product classification.</p>
         </div>
       </div>
 
-      <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New category name…"
-          onKeyDown={e => e.key === 'Enter' && addCategory()}
-          className="admin-input-field" style={{ flex: 1 }} />
-        <button onClick={addCategory} disabled={adding || !newName.trim()} className="admin-btn admin-btn-primary" style={{ whiteSpace: 'nowrap' }}>
-          {adding ? '…' : <><Plus size={18} style={{ marginRight: '6px' }} /> Add Category</>}
+      <div className="admin-categories-tabs" role="tablist" aria-label="Category sections">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === MAIN_TAB}
+          onClick={() => switchTab(MAIN_TAB)}
+          className={`admin-btn ${tab === MAIN_TAB ? 'admin-btn-primary' : 'admin-btn-ghost'}`}
+        >
+          <FolderTree size={17} /> Main Categories ({categories.filter((row) => !isDeleted(row)).length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === SUB_TAB}
+          onClick={() => switchTab(SUB_TAB)}
+          className={`admin-btn ${tab === SUB_TAB ? 'admin-btn-primary' : 'admin-btn-ghost'}`}
+        >
+          <Layers3 size={17} /> Subcategories ({subCategories.filter((row) => !isDeleted(row)).length})
         </button>
       </div>
 
-      <div className="glass-panel admin-table-container">
-        {loading ? (
-          <div style={{ color: '#94a3b8', padding: '40px', textAlign: 'center' }}>Loading categories…</div>
+      {message && (
+        <div className={`admin-categories-message ${message.type === 'error' ? 'is-error' : 'is-success'}`} role="status">
+          {message.type === 'error' ? <X size={17} /> : <CheckCircle2 size={17} />}
+          <span>{message.text}</span>
+          <button type="button" onClick={() => setMessage(null)} aria-label="Dismiss message">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      <section className="glass-panel admin-categories-add">
+        {tab === MAIN_TAB ? (
+          <>
+            <div className="admin-categories-add__label">
+              <FolderTree size={17} />
+              <div>
+                <strong>Add a main category</strong>
+                <span>These are the top-level categories shown in your catalogue.</span>
+              </div>
+            </div>
+            <div className="admin-categories-add__main-form">
+              <input
+                className="admin-input-field"
+                value={newCategoryName}
+                onChange={(event) => setNewCategoryName(event.target.value)}
+                onKeyDown={(event) => event.key === 'Enter' && addMainCategory()}
+                placeholder="New main category name…"
+              />
+              <button
+                type="button"
+                onClick={addMainCategory}
+                disabled={adding || !newCategoryName.trim()}
+                className="admin-btn admin-btn-primary"
+              >
+                <Plus size={17} /> {adding ? 'Adding…' : 'Add Category'}
+              </button>
+            </div>
+          </>
         ) : (
-          <table className="admin-table">
+          <>
+            <div className="admin-categories-add__label">
+              <Layers3 size={17} />
+              <div>
+                <strong>Add a subcategory</strong>
+                <span>Each subcategory belongs to one main category and has a unique ERP group code.</span>
+              </div>
+            </div>
+            <div className="admin-categories-add__sub-form">
+              <select
+                className="admin-input-field"
+                value={newSubCategoryId}
+                onChange={(event) => setNewSubCategoryId(event.target.value)}
+              >
+                <option value="">Select main category…</option>
+                {categories
+                  .filter((category) => !isDeleted(category))
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.category_name}
+                    </option>
+                  ))}
+              </select>
+              <input
+                className="admin-input-field"
+                value={newSubName}
+                onChange={(event) => setNewSubName(event.target.value)}
+                placeholder="Subcategory name…"
+              />
+              <input
+                className="admin-input-field"
+                value={newSubGroupCode}
+                onChange={(event) => setNewSubGroupCode(event.target.value.toUpperCase())}
+                onKeyDown={(event) => event.key === 'Enter' && addSubCategory()}
+                placeholder="Group code…"
+                maxLength={10}
+              />
+              <button
+                type="button"
+                onClick={addSubCategory}
+                disabled={adding || !newSubName.trim() || !newSubGroupCode.trim() || !newSubCategoryId}
+                className="admin-btn admin-btn-primary"
+              >
+                <Plus size={17} /> {adding ? 'Adding…' : 'Add Subcategory'}
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="glass-panel admin-categories-controls">
+        <div className="admin-categories-search">
+          <Search size={18} aria-hidden="true" />
+          <input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setSelectedIds(new Set())
+            }}
+            placeholder={tab === MAIN_TAB ? 'Search main categories or ID…' : 'Search subcategories, main category, group code or ID…'}
+            aria-label={`Search ${currentTabTitle}`}
+          />
+          {search && (
+            <button type="button" onClick={() => setSearch('')} aria-label="Clear search">
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        <div className="admin-categories-filters" aria-label="Status filter">
+          {STATUS_FILTERS.map((filter) => {
+            const label = filter === 'all'
+              ? `All (${counts.available})`
+              : filter === 'active'
+                ? `Active (${counts.active})`
+                : filter === 'hidden'
+                  ? `Hidden (${counts.hidden})`
+                  : `Deleted (${counts.deleted})`
+            return (
+              <button
+                key={filter}
+                type="button"
+                className={statusFilter === filter ? 'is-active' : ''}
+                onClick={() => changeFilter(filter)}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <span className="admin-categories-matching">{filteredRows.length.toLocaleString()} matching</span>
+      </section>
+
+      {selectedIds.size > 0 && (
+        <section className="admin-categories-bulk">
+          <div>
+            <strong>{selectedIds.size.toLocaleString()} selected</strong>
+            <span>Bulk actions apply only to the selected {tab === MAIN_TAB ? 'main categories' : 'subcategories'}.</span>
+          </div>
+          <div className="admin-categories-bulk__actions">
+            {statusFilter !== 'deleted' ? (
+              <>
+                <button type="button" className="is-show" disabled={bulkBusy} onClick={() => requestBulkAction('show')}>
+                  <Eye size={16} /> Show
+                </button>
+                <button type="button" className="is-hide" disabled={bulkBusy} onClick={() => requestBulkAction('hide')}>
+                  <EyeOff size={16} /> Hide
+                </button>
+                <button type="button" className="is-delete" disabled={bulkBusy} onClick={() => requestBulkAction('delete')}>
+                  <Trash2 size={16} /> Delete
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="is-show" disabled={bulkBusy} onClick={() => requestBulkAction('restore')}>
+                  <RotateCcw size={16} /> Restore
+                </button>
+                <button type="button" className="is-delete" disabled={bulkBusy} onClick={() => requestBulkAction('permanent-delete')}>
+                  <Trash2 size={16} /> Delete Permanently
+                </button>
+              </>
+            )}
+            <button type="button" className="is-clear" disabled={bulkBusy} onClick={() => setSelectedIds(new Set())}>
+              <X size={16} /> Clear
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="glass-panel admin-categories-table-wrap">
+        {loading ? (
+          <div className="admin-categories-state">Loading {currentTabTitle.toLowerCase()}…</div>
+        ) : filteredRows.length === 0 ? (
+          <div className="admin-categories-state">
+            <strong>No {currentTabTitle.toLowerCase()} found</strong>
+            <span>Try another search or status filter.</span>
+          </div>
+        ) : (
+          <table className="admin-categories-table">
             <thead>
               <tr>
-                {['Category Name', 'Products', 'Status', 'Actions'].map(h => (
-                  <th key={h}>{h}</th>
-                ))}
+                <th className="is-check">
+                  <label className="admin-categories-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleAll}
+                      aria-label={`Select all matching ${currentTabTitle}`}
+                    />
+                    <span><Check size={13} /></span>
+                  </label>
+                </th>
+                {tab === MAIN_TAB ? (
+                  <>
+                    <th>Category Name</th>
+                    <th>Image</th>
+                    <th>Products</th>
+                    <th>Subcategories</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Subcategory</th>
+                    <th>Main Category</th>
+                    <th>Group Code</th>
+                    <th>Products</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {categories.map(c => <CategoryRow key={c.id} category={c} onRefresh={load} onView={() => setSelected(c)} />)}
+              {filteredRows.map((row) => {
+                const checked = selectedIds.has(Number(row.id))
+                const imageBusy = Number(imageBusyId) === Number(row.id)
+                const busy = Number(rowBusyId) === Number(row.id) || imageBusy
+                const deleted = isDeleted(row)
+                const imageUrl = tab === MAIN_TAB ? categoryImageUrl(row) : ''
+                const parentDeleted = tab === SUB_TAB && isDeleted(row.category)
+                const parentHidden = tab === SUB_TAB && !parentDeleted && row.category && !asBool(row.category.status)
+
+                return (
+                  <tr key={row.id} className={checked ? 'is-selected' : ''}>
+                    <td className="is-check">
+                      <label className="admin-categories-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSelected(row.id)}
+                          aria-label={`Select ${rowName(tab, row)}`}
+                        />
+                        <span><Check size={13} /></span>
+                      </label>
+                    </td>
+
+                    {tab === MAIN_TAB ? (
+                      <>
+                        <td className="admin-categories-name-cell">
+                          {editingId === row.id ? (
+                            <MainCategoryEdit
+                              row={row}
+                              busy={busy}
+                              onCancel={() => setEditingId(null)}
+                              onSave={(data) => saveRow(row, data)}
+                            />
+                          ) : (
+                            <div className="admin-categories-name">
+                              <strong>{row.category_name}</strong>
+                              <small>Category ID #{row.id}</small>
+                            </div>
+                          )}
+                        </td>
+                        <td className="admin-categories-image-cell">
+                          <div className="admin-categories-image-manager">
+                            <div className="admin-categories-image-preview">
+                              {imageUrl ? (
+                                <img src={imageUrl} alt={`${row.category_name} category`} loading="lazy" />
+                              ) : (
+                                <span><ImageIcon size={18} /> No image</span>
+                              )}
+                            </div>
+                            {!deleted && (
+                              <label
+                                className={`admin-categories-image-upload ${imageBusy ? 'is-busy' : ''}`}
+                                title={imageUrl ? 'Change category image' : 'Upload category image'}
+                              >
+                                <Upload size={14} />
+                                <span>{imageBusy ? 'Uploading…' : imageUrl ? 'Change' : 'Upload'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                  disabled={busy}
+                                  onChange={(event) => {
+                                    const file = event.target.files?.[0] || null
+                                    event.target.value = ''
+                                    if (file) changeMainCategoryImage(row, file)
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </td>
+                        <td><span className="admin-categories-number">{Number(row.products_count ?? 0).toLocaleString()}</span></td>
+                        <td><span className="admin-categories-number">{Number(row.sub_categories_count ?? 0).toLocaleString()}</span></td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="admin-categories-name-cell">
+                          {editingId === row.id ? (
+                            <SubCategoryEdit
+                              row={row}
+                              categories={categories}
+                              busy={busy}
+                              onCancel={() => setEditingId(null)}
+                              onSave={(data) => saveRow(row, data)}
+                            />
+                          ) : (
+                            <div className="admin-categories-name">
+                              <strong>{row.sub_category_name}</strong>
+                              <small>Subcategory ID #{row.id}</small>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div className="admin-categories-parent">
+                            <strong>{row.category?.category_name || `Category #${row.category_id}`}</strong>
+                            {parentDeleted && <small className="is-warning">Parent deleted</small>}
+                            {parentHidden && <small className="is-warning">Parent hidden</small>}
+                          </div>
+                        </td>
+                        <td><code className="admin-categories-code">{row.group_code || '—'}</code></td>
+                        <td><span className="admin-categories-number">{Number(row.products_count ?? 0).toLocaleString()}</span></td>
+                      </>
+                    )}
+
+                    <td>
+                      <span className={`admin-categories-status ${deleted ? 'is-deleted' : asBool(row.status) ? 'is-active' : 'is-hidden'}`}>
+                        {statusLabel(row)}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="admin-categories-actions">
+                        {!deleted ? (
+                          <>
+                            {editingId !== row.id && (
+                              <button
+                                type="button"
+                                className="is-edit"
+                                disabled={busy}
+                                onClick={() => setEditingId(row.id)}
+                                title={`Edit ${tab === MAIN_TAB ? 'category' : 'subcategory'}`}
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={asBool(row.status) ? 'is-hide' : 'is-show'}
+                              disabled={busy}
+                              onClick={() => requestAction(row, asBool(row.status) ? 'hide' : 'show')}
+                              title={asBool(row.status) ? 'Hide' : 'Show'}
+                            >
+                              {asBool(row.status) ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                            <button
+                              type="button"
+                              className="is-delete"
+                              disabled={busy}
+                              onClick={() => requestAction(row, 'delete')}
+                              title="Move to Deleted"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="is-show"
+                              disabled={busy}
+                              onClick={() => requestAction(row, 'restore')}
+                              title="Restore"
+                            >
+                              <RotateCcw size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="is-delete"
+                              disabled={
+                                busy
+                                || Number(row.products_count ?? 0) > 0
+                                || (tab === MAIN_TAB && Number(row.sub_categories_count ?? 0) > 0)
+                              }
+                              onClick={() => requestAction(row, 'permanent-delete')}
+                              title={
+                                Number(row.products_count ?? 0) > 0
+                                  ? 'Permanent delete is blocked while products use this record'
+                                  : tab === MAIN_TAB && Number(row.sub_categories_count ?? 0) > 0
+                                    ? 'Permanent delete is blocked while subcategories belong to this main category'
+                                    : 'Delete permanently'
+                              }
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
-      </div>
+      </section>
     </div>
   )
 }

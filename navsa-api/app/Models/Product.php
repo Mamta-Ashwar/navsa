@@ -14,6 +14,7 @@ class Product extends Model
         'navsa_product_code',
         'description',
         'supplier_id',
+        'primary_supplier_index',
         'category_id',
         'sub_category_id',
         'brand_id',
@@ -48,12 +49,8 @@ class Product extends Model
         'from_date',
         'to_date',
 
-        // Manual website pricing
-        'manual_price_list',
-        'manual_standard_price',
+        // Website promotion price
         'promotion_price',
-        'promotion_start_date',
-        'promotion_finish_date',
 
         // Import tracking
         'last_erp_import_at',
@@ -90,15 +87,13 @@ class Product extends Model
     protected $casts = [
         'price' => 'decimal:2',
         'cost' => 'decimal:2',
-        'manual_standard_price' => 'decimal:2',
         'promotion_price' => 'decimal:2',
 
         'cost_from_date' => 'date:Y-m-d',
         'cost_to_date' => 'date:Y-m-d',
         'from_date' => 'date:Y-m-d',
         'to_date' => 'date:Y-m-d',
-        'promotion_start_date' => 'date:Y-m-d',
-        'promotion_finish_date' => 'date:Y-m-d',
+        'obsolete' => 'date:Y-m-d',
 
         'last_erp_import_at' => 'datetime',
         'last_manual_import_at' => 'datetime',
@@ -121,6 +116,83 @@ class Product extends Model
         'order_qty_allowed',
     ];
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Obsolete-date catalogue lifecycle
+    |--------------------------------------------------------------------------
+    |
+    | NAVSA sells worldwide, so the ERP Obsolete date uses one neutral global
+    | cut-off: UTC. The date itself remains valid through that UTC date.
+    | Example: Obsolete = 2026-08-14 stays active on 14 Aug UTC and expires
+    | from 2026-08-15 UTC onward.
+    */
+
+    public static function obsoleteTodayUtc(): string
+    {
+        return Carbon::now('UTC')->toDateString();
+    }
+
+    public static function isObsoleteDateExpired($value): bool
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return false;
+        }
+
+        try {
+            $date = $value instanceof \DateTimeInterface
+                ? Carbon::instance($value)->utc()->startOfDay()
+                : Carbon::parse((string) $value, 'UTC')->startOfDay();
+
+            return $date->lt(Carbon::now('UTC')->startOfDay());
+        } catch (\Throwable $e) {
+            // Invalid legacy values are never auto-deleted. Imports validate
+            // new Obsolete values before they reach the database.
+            return false;
+        }
+    }
+
+    public static function constrainToNonExpiredObsolete($query)
+    {
+        $today = static::obsoleteTodayUtc();
+
+        return $query->where(function ($obsoleteQuery) use ($today) {
+            $obsoleteQuery
+                ->whereNull('obsolete')
+                ->orWhere('obsolete', '')
+                // Keep invalid legacy values visible rather than deleting them.
+                ->orWhereRaw("obsolete NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}'")
+                ->orWhereRaw(
+                    "STR_TO_DATE(SUBSTRING(obsolete, 1, 10), '%Y-%m-%d') >= ?",
+                    [$today]
+                );
+        });
+    }
+
+    public static function expireObsoleteProducts(): int
+    {
+        $today = static::obsoleteTodayUtc();
+
+        return static::query()
+            ->whereNotNull('obsolete')
+            ->where('obsolete', '<>', '')
+            ->whereRaw("obsolete REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}'")
+            ->whereRaw(
+                "STR_TO_DATE(SUBSTRING(obsolete, 1, 10), '%Y-%m-%d') < ?",
+                [$today]
+            )
+            ->where(function ($stateQuery) {
+                $stateQuery
+                    ->where('deleted', false)
+                    ->orWhere('live_for_web', 1);
+            })
+            ->update([
+                'deleted' => true,
+                'live_for_web' => 0,
+                'updated_at' => now(),
+            ]);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Pricing accessors
@@ -133,10 +205,6 @@ class Product extends Model
             return (float) $this->promotion_price;
         }
 
-        if ($this->manual_standard_price !== null) {
-            return (float) $this->manual_standard_price;
-        }
-
         return $this->price !== null
             ? (float) $this->price
             : null;
@@ -144,27 +212,23 @@ class Product extends Model
 
     public function getEffectivePriceListAttribute(): string
     {
-        $manualType = $this->normalisePriceList($this->manual_price_list);
+        $priceList = $this->normalisePriceList($this->price_list);
 
-        if ($manualType === null || $manualType === 'STD') {
+        if ($priceList === null || $priceList === 'STD') {
             return 'STD';
         }
 
-        if ($this->isDatedPromotionType($manualType)) {
-            return $this->promotion_active ? $manualType : 'STD';
+        if ($this->isDatedPromotionType($priceList)) {
+            return $this->promotion_active ? $priceList : 'STD';
         }
 
-        // WIGIG and NEW remain active until manually changed,
-        // unless dates were supplied.
-        if (in_array($manualType, ['WIGIG', 'NEW'], true)) {
-            if (
-                $this->promotion_start_date !== null ||
-                $this->promotion_finish_date !== null
-            ) {
-                return $this->promotion_active ? $manualType : 'STD';
+        // WIGIG and NEW remain active unless ERP FromDate / ToDate restrict them.
+        if (in_array($priceList, ['WIGIG', 'NEW'], true)) {
+            if ($this->from_date !== null || $this->to_date !== null) {
+                return $this->promotion_active ? $priceList : 'STD';
             }
 
-            return $manualType;
+            return $priceList;
         }
 
         return 'STD';
@@ -172,25 +236,19 @@ class Product extends Model
 
     public function getPromotionActiveAttribute(): bool
     {
-        $manualType = $this->normalisePriceList($this->manual_price_list);
+        $priceList = $this->normalisePriceList($this->price_list);
 
-        if ($manualType === null || $manualType === 'STD') {
+        if ($priceList === null || $priceList === 'STD') {
             return false;
         }
 
         $today = Carbon::today();
 
-        if (
-            $this->promotion_start_date !== null &&
-            $today->lt($this->promotion_start_date)
-        ) {
+        if ($this->from_date !== null && $today->lt($this->from_date)) {
             return false;
         }
 
-        if (
-            $this->promotion_finish_date !== null &&
-            $today->gt($this->promotion_finish_date)
-        ) {
+        if ($this->to_date !== null && $today->gt($this->to_date)) {
             return false;
         }
 
@@ -199,11 +257,11 @@ class Product extends Model
 
     public function getPromotionExpiredAttribute(): bool
     {
-        if ($this->promotion_finish_date === null) {
+        if ($this->to_date === null) {
             return false;
         }
 
-        return Carbon::today()->gt($this->promotion_finish_date);
+        return Carbon::today()->gt($this->to_date);
     }
 
     public function getProductBannerAttribute(): ?string
@@ -226,17 +284,17 @@ class Product extends Model
         }
 
         return match ($this->effective_price_list) {
-            'MONTHLY PROMOTION' => $this->promotion_finish_date
+            'MONTHLY PROMOTION' => $this->to_date
                 ? [
                     'label' => 'Ends on',
-                    'date' => $this->promotion_finish_date->format('d M Y'),
+                    'date' => $this->to_date->format('d M Y'),
                 ]
                 : null,
 
-            'PRESELL' => $this->promotion_start_date
+            'PRESELL' => $this->from_date
                 ? [
                     'label' => 'Available from',
-                    'date' => $this->promotion_start_date->format('d M Y'),
+                    'date' => $this->from_date->format('d M Y'),
                 ]
                 : null,
 

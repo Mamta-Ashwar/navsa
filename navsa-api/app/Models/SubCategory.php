@@ -13,13 +13,21 @@ class SubCategory extends Model
         'sub_category_name',
         'group_code',
         'status',
+        'deleted',
     ];
 
-    public function category() {
+    protected $casts = [
+        'status' => 'boolean',
+        'deleted' => 'boolean',
+    ];
+
+    public function category()
+    {
         return $this->belongsTo(Category::class);
     }
 
-    public function products() {
-        return $this->hasMany(Product::class);
+    public function products()
+    {
+        return $this->hasMany(Product::class, 'sub_category_id');
     }
 }

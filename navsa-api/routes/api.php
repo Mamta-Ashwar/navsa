@@ -19,13 +19,27 @@ Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{id}', [ProductController::class, 'show']);
 
 Route::get('/categories', function () {
-    return Category::where('status', 1)
+    return Category::whereNull('parent_id')
+        ->where('status', 1)
+        ->where(function ($query) {
+            $query->where('deleted', false)->orWhereNull('deleted');
+        })
         ->orderBy('category_name')
-        ->get(['id', 'category_name']);
+        ->get(['id', 'category_name', 'image_path']);
 });
 
 Route::get('/sub-categories', function () {
     return SubCategory::where('status', 1)
+        ->where(function ($query) {
+            $query->where('deleted', false)->orWhereNull('deleted');
+        })
+        ->whereHas('category', function ($query) {
+            $query->whereNull('parent_id')
+                ->where('status', 1)
+                ->where(function ($categoryQuery) {
+                    $categoryQuery->where('deleted', false)->orWhereNull('deleted');
+                });
+        })
         ->orderBy('sub_category_name')
         ->get(['id', 'category_id', 'sub_category_name', 'group_code']);
 });
@@ -33,12 +47,25 @@ Route::get('/sub-categories', function () {
 Route::get('/sub-categories/{categoryId}', function ($categoryId) {
     return SubCategory::where('category_id', $categoryId)
         ->where('status', 1)
+        ->where(function ($query) {
+            $query->where('deleted', false)->orWhereNull('deleted');
+        })
+        ->whereHas('category', function ($query) {
+            $query->whereNull('parent_id')
+                ->where('status', 1)
+                ->where(function ($categoryQuery) {
+                    $categoryQuery->where('deleted', false)->orWhereNull('deleted');
+                });
+        })
         ->orderBy('sub_category_name')
         ->get(['id', 'category_id', 'sub_category_name', 'group_code']);
 });
 
 Route::get('/brands', function () {
     return Brand::where('status', 1)
+        ->where(function ($query) {
+            $query->where('deleted', false)->orWhereNull('deleted');
+        })
         ->orderBy('brand_name')
         ->get(['id', 'brand_name']);
 });
@@ -70,6 +97,7 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
     // Products CRUD + stock + delete + ERP import
     Route::post('/import-erp',                     [AdminController::class, 'importErpProducts'])->middleware('can:products.import-erp');
     Route::get('/products',                        [AdminController::class, 'products'])->middleware('can:products.view');
+    Route::get('/vat-codes',                       [AdminController::class, 'vatCodes'])->middleware('can:products.view');
     Route::post('/products',                       [AdminController::class, 'createProduct'])->middleware('can:products.create');
     Route::patch('/products/bulk-hide',             [AdminController::class, 'bulkHideProducts'])->middleware('can:products.edit');
     Route::patch('/products/bulk-show',             [AdminController::class, 'bulkShowProducts'])->middleware('can:products.edit');
@@ -103,16 +131,41 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
     // Brands
     Route::get('/brands',                          [AdminController::class, 'brands'])->middleware('can:brands.manage');
     Route::post('/brands',                         [AdminController::class, 'createBrand'])->middleware('can:brands.manage');
+    Route::patch('/brands/bulk-hide',              [AdminController::class, 'bulkHideBrands'])->middleware('can:brands.manage');
+    Route::patch('/brands/bulk-show',              [AdminController::class, 'bulkShowBrands'])->middleware('can:brands.manage');
+    Route::patch('/brands/bulk-soft-delete',       [AdminController::class, 'bulkSoftDeleteBrands'])->middleware('can:brands.manage');
+    Route::patch('/brands/bulk-restore',           [AdminController::class, 'bulkRestoreBrands'])->middleware('can:brands.manage');
     Route::put('/brands/{id}',                     [AdminController::class, 'updateBrand'])->middleware('can:brands.manage');
     Route::patch('/brands/{id}/soft-delete',       [AdminController::class, 'softDeleteBrand'])->middleware('can:brands.manage');
+    Route::patch('/brands/{id}/restore',           [AdminController::class, 'restoreBrand'])->middleware('can:brands.manage');
     Route::delete('/brands/{id}',                  [AdminController::class, 'hardDeleteBrand'])->middleware('can:brands.manage');
 
-    // Categories
-    Route::get('/categories',                      [AdminController::class, 'categories'])->middleware('can:categories.manage');
-    Route::post('/categories',                     [AdminController::class, 'createCategory'])->middleware('can:categories.manage');
-    Route::put('/categories/{id}',                 [AdminController::class, 'updateCategory'])->middleware('can:categories.manage');
-    Route::patch('/categories/{id}/soft-delete',   [AdminController::class, 'softDeleteCategory'])->middleware('can:categories.manage');
-    Route::delete('/categories/{id}',              [AdminController::class, 'hardDeleteCategory'])->middleware('can:categories.manage');
+    // Main Categories
+    Route::get('/categories',                          [AdminController::class, 'categories'])->middleware('can:categories.manage');
+    Route::post('/categories',                         [AdminController::class, 'createCategory'])->middleware('can:categories.manage');
+    Route::post('/categories/{id}/image',              [AdminController::class, 'uploadCategoryImage'])->middleware('can:categories.manage');
+    Route::patch('/categories/bulk-hide',              [AdminController::class, 'bulkHideCategories'])->middleware('can:categories.manage');
+    Route::patch('/categories/bulk-show',              [AdminController::class, 'bulkShowCategories'])->middleware('can:categories.manage');
+    Route::patch('/categories/bulk-soft-delete',       [AdminController::class, 'bulkSoftDeleteCategories'])->middleware('can:categories.manage');
+    Route::patch('/categories/bulk-restore',           [AdminController::class, 'bulkRestoreCategories'])->middleware('can:categories.manage');
+    Route::delete('/categories/bulk-hard-delete',      [AdminController::class, 'bulkHardDeleteCategories'])->middleware('can:categories.manage');
+    Route::put('/categories/{id}',                     [AdminController::class, 'updateCategory'])->middleware('can:categories.manage');
+    Route::patch('/categories/{id}/soft-delete',       [AdminController::class, 'softDeleteCategory'])->middleware('can:categories.manage');
+    Route::patch('/categories/{id}/restore',           [AdminController::class, 'restoreCategory'])->middleware('can:categories.manage');
+    Route::delete('/categories/{id}',                  [AdminController::class, 'hardDeleteCategory'])->middleware('can:categories.manage');
+
+    // Subcategories (same category-management permission)
+    Route::get('/sub-categories',                      [AdminController::class, 'subCategories'])->middleware('can:categories.manage');
+    Route::post('/sub-categories',                     [AdminController::class, 'createSubCategory'])->middleware('can:categories.manage');
+    Route::patch('/sub-categories/bulk-hide',          [AdminController::class, 'bulkHideSubCategories'])->middleware('can:categories.manage');
+    Route::patch('/sub-categories/bulk-show',          [AdminController::class, 'bulkShowSubCategories'])->middleware('can:categories.manage');
+    Route::patch('/sub-categories/bulk-soft-delete',   [AdminController::class, 'bulkSoftDeleteSubCategories'])->middleware('can:categories.manage');
+    Route::patch('/sub-categories/bulk-restore',       [AdminController::class, 'bulkRestoreSubCategories'])->middleware('can:categories.manage');
+    Route::delete('/sub-categories/bulk-hard-delete',  [AdminController::class, 'bulkHardDeleteSubCategories'])->middleware('can:categories.manage');
+    Route::put('/sub-categories/{id}',                 [AdminController::class, 'updateSubCategory'])->middleware('can:categories.manage');
+    Route::patch('/sub-categories/{id}/soft-delete',   [AdminController::class, 'softDeleteSubCategory'])->middleware('can:categories.manage');
+    Route::patch('/sub-categories/{id}/restore',       [AdminController::class, 'restoreSubCategory'])->middleware('can:categories.manage');
+    Route::delete('/sub-categories/{id}',              [AdminController::class, 'hardDeleteSubCategory'])->middleware('can:categories.manage');
 
     // Banners
     Route::get('/banners',                         [AdminController::class, 'banners'])->middleware('can:banners.manage');

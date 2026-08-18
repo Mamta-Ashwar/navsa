@@ -4,39 +4,44 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 class AdminAuth
 {
     /**
-     * Handle an incoming request.
+     * Authenticate and authorize NAVSA administrators using Laravel Sanctum.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
+     * IONOS strips the standard Authorization header during the public /api
+     * rewrite. The public API bridge restores the Bearer token from
+     * X-Navsa-Auth before Laravel boots.
+     *
+     * No legacy admin key or hardcoded admin impersonation is accepted here.
      */
     public function handle(Request $request, Closure $next)
     {
-        $adminKey = env('ADMIN_API_KEY', 'navsa2024');
-        $key = $request->header('X-Admin-Key') ?? $request->query('admin_key');
+        $adminUser = Auth::guard('sanctum')->user();
 
-        if ($key && $key === $adminKey) {
-            if (!$request->user()) {
-                $user = User::where('email', 'info@navsainternational.com')
-                    ->orWhere('email', 'admin@navsa.com')
-                    ->first();
-                if ($user) {
-                    Auth::setUser($user);
-                }
-            }
-            return $next($request);
+        if (!$adminUser) {
+            return response()->json([
+                'message' => 'Unauthenticated.'
+            ], 401);
         }
 
-        if ($request->user()) {
-            return $next($request);
+        if (
+            $adminUser->status !== 'approved' ||
+            $adminUser->role !== 'admin'
+        ) {
+            return response()->json([
+                'message' => 'Forbidden.'
+            ], 403);
         }
 
-        return response()->json(['message' => 'Unauthenticated.'], 401);
+        Auth::setUser($adminUser);
+
+        $request->setUserResolver(function () use ($adminUser) {
+            return $adminUser;
+        });
+
+        return $next($request);
     }
 }
