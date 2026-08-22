@@ -502,3 +502,65 @@ export const getOrders = (params = {}) => {
 }
 export const getOrder = (id) => req('GET', `/orders/${id}`)
 export const updateOrderStatus = (id, status) => req('PATCH', `/orders/${id}/status`, { status })
+
+// Import & Export API functions
+export const exportProducts = (format = 'csv') => {
+  const token = localStorage.getItem('admin_token')
+  window.open(`${BASE}/admin/export/products?format=${format}&token=${encodeURIComponent(token || '')}`, '_blank')
+}
+
+export const importProductsFile = async (formData) => {
+  const res = await fetch(`${BASE}/admin/import/products`, {
+    method: 'POST',
+    headers: fileHeaders(),
+    body: formData,
+  })
+  return readResponse(res)
+}
+
+export const importProductsJSON = (items) => req('POST', '/import/products', { items })
+
+export const exportBrands = (format = 'csv') => {
+  const token = localStorage.getItem('admin_token')
+  window.open(`${BASE}/admin/export/brands?format=${format}&token=${encodeURIComponent(token || '')}`, '_blank')
+}
+
+export const importBrandsFile = async (formData) => {
+  const res = await fetch(`${BASE}/admin/import/brands`, {
+    method: 'POST',
+    headers: fileHeaders(),
+    body: formData,
+  })
+  return readResponse(res)
+}
+
+export const importBrandsJSON = (items) => req('POST', '/import/brands', { items })
+
+export const exportCategories = (format = 'csv') => {
+  const token = localStorage.getItem('admin_token')
+  window.open(`${BASE}/admin/export/categories?format=${format}&token=${encodeURIComponent(token || '')}`, '_blank')
+}
+
+export const importCategoriesFile = async (formData) => {
+  const res = await fetch(`${BASE}/admin/import/categories`, {
+    method: 'POST',
+    headers: fileHeaders(),
+    body: formData,
+  })
+  return readResponse(res)
+}
+
+export const importCategoriesJSON = (items) => req('POST', '/import/categories', { items })
+
+export const exportFullBackup = () => {
+  window.open(`${BASE}/admin/export/full-backup`, '_blank')
+}
+
+export const importFullRestoreFile = async (formData) => {
+  const res = await fetch(`${BASE}/admin/import/full-restore`, {
+    method: 'POST',
+    headers: fileHeaders(),
+    body: formData,
+  })
+  return readResponse(res)
+}

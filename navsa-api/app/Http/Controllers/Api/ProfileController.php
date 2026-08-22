@@ -208,7 +208,7 @@ class ProfileController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Create Order Error: ' . $e->getMessage());
-            return response()->json(['message' => 'Failed to create order.'], 500);
+            return response()->json(['message' => 'Failed to create order: ' . $e->getMessage()], 500);
         }
     }
 

@@ -3865,4 +3865,413 @@ class AdminController extends Controller
             'order' => $order->load(['user', 'items.product']),
         ]);
     }
+
+    // ==========================================
+    // DATA IMPORT & EXPORT METHODS
+    // ==========================================
+
+    public function exportProducts(Request $request)
+    {
+        $type = $request->query('format', 'csv');
+        $products = Product::with(['brand', 'category', 'subCategory', 'supplier'])->where('deleted', 0)->get();
+
+        if ($type === 'json') {
+            return response()->json($products);
+        }
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="navsa_products_' . date('Y-m-d') . '.csv"',
+        ];
+
+        $callback = function () use ($products) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, [
+                'NAVSA Product Code',
+                'Description',
+                'Brand',
+                'Category',
+                'SubCategory',
+                'Unit Size',
+                'Case Quantity',
+                'Price Per Unit',
+                'Price Per Case',
+                'Stock Quantity',
+                'Status',
+                'Order Qty Allowed',
+                'BBD'
+            ]);
+
+            foreach ($products as $p) {
+                fputcsv($file, [
+                    $p->navsa_product_code,
+                    $p->description,
+                    $p->brand ? $p->brand->brand_name : '',
+                    $p->category ? $p->category->category_name : '',
+                    $p->subCategory ? $p->subCategory->sub_category_name : '',
+                    $p->unit_size,
+                    $p->case_quantity,
+                    $p->price_per_unit,
+                    $p->price_per_case,
+                    $p->stock,
+                    $p->status ? 'Active' : 'Inactive',
+                    $p->order_qty_allowed,
+                    $p->bbd
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function importProducts(Request $request)
+    {
+        $items = $request->input('items', []);
+
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $ext = strtolower($file->getClientOriginalExtension());
+            if ($ext === 'json') {
+                $content = file_get_contents($file->getRealPath());
+                $items = json_decode($content, true) ?? [];
+            } else if (in_array($ext, ['csv', 'txt'])) {
+                $handle = fopen($file->getRealPath(), 'r');
+                $header = fgetcsv($handle);
+                while (($row = fgetcsv($handle)) !== false) {
+                    if (count($row) >= 2) {
+                        $items[] = [
+                            'navsa_product_code' => $row[0] ?? null,
+                            'description'        => $row[1] ?? null,
+                            'brand_name'         => $row[2] ?? null,
+                            'category_name'      => $row[3] ?? null,
+                            'sub_category_name'  => $row[4] ?? null,
+                            'unit_size'          => $row[5] ?? null,
+                            'case_quantity'      => $row[6] ?? 1,
+                            'price_per_unit'     => $row[7] ?? 0,
+                            'price_per_case'     => $row[8] ?? 0,
+                            'stock'              => $row[9] ?? 0,
+                        ];
+                    }
+                }
+                fclose($handle);
+            }
+        }
+
+        if (empty($items)) {
+            return response()->json(['error' => 'No valid items found for import.'], 422);
+        }
+
+        $created = 0;
+        $updated = 0;
+
+        foreach ($items as $item) {
+            $code = trim((string)($item['navsa_product_code'] ?? $item['reference'] ?? ''));
+            $desc = trim((string)($item['description'] ?? ''));
+
+            if (!$code && !$desc) continue;
+
+            $brandId = null;
+            if (!empty($item['brand_name'])) {
+                $bName = trim($item['brand_name']);
+                $brand = Brand::firstOrCreate(['brand_name' => $bName], ['status' => 1, 'deleted' => 0]);
+                $brandId = $brand->id;
+            } elseif (!empty($item['brand_id'])) {
+                $brandId = $item['brand_id'];
+            }
+
+            $categoryId = null;
+            if (!empty($item['category_name'])) {
+                $cName = trim($item['category_name']);
+                $cat = Category::firstOrCreate(['category_name' => $cName], ['status' => 1, 'deleted' => 0]);
+                $categoryId = $cat->id;
+            } elseif (!empty($item['category_id'])) {
+                $categoryId = $item['category_id'];
+            }
+
+            $productData = [
+                'description'       => $desc ?: $code,
+                'brand_id'          => $brandId,
+                'category_id'       => $categoryId,
+                'unit_size'         => $item['unit_size'] ?? null,
+                'case_quantity'     => (int)($item['case_quantity'] ?? 1),
+                'price_per_unit'    => (float)($item['price_per_unit'] ?? 0),
+                'price_per_case'    => (float)($item['price_per_case'] ?? 0),
+                'stock'             => (int)($item['stock'] ?? 0),
+                'status'            => isset($item['status']) ? ($item['status'] === 'Active' || $item['status'] == 1 ? 1 : 0) : 1,
+                'deleted'           => 0,
+            ];
+
+            if ($code) {
+                $existing = Product::where('navsa_product_code', $code)->first();
+                if ($existing) {
+                    $existing->update($productData);
+                    $updated++;
+                } else {
+                    $productData['navsa_product_code'] = $code;
+                    Product::create($productData);
+                    $created++;
+                }
+            } else {
+                Product::create($productData);
+                $created++;
+            }
+        }
+
+        return response()->json([
+            'message' => 'Product import processed successfully.',
+            'created' => $created,
+            'updated' => $updated,
+            'total'   => $created + $updated
+        ]);
+    }
+
+    public function exportBrands(Request $request)
+    {
+        $brands = Brand::where('deleted', 0)->orderBy('brand_name')->get();
+        if ($request->query('format') === 'json') {
+            return response()->json($brands);
+        }
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="navsa_brands_' . date('Y-m-d') . '.csv"',
+        ];
+
+        $callback = function () use ($brands) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, ['ID', 'Brand Name', 'Status']);
+            foreach ($brands as $b) {
+                fputcsv($file, [$b->id, $b->brand_name, $b->status ? 'Active' : 'Inactive']);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function importBrands(Request $request)
+    {
+        $items = $request->input('items', []);
+
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $ext = strtolower($file->getClientOriginalExtension());
+            if ($ext === 'json') {
+                $items = json_decode(file_get_contents($file->getRealPath()), true) ?? [];
+            } else {
+                $handle = fopen($file->getRealPath(), 'r');
+                fgetcsv($handle);
+                while (($row = fgetcsv($handle)) !== false) {
+                    if (!empty($row[1])) {
+                        $items[] = ['brand_name' => $row[1], 'status' => $row[2] ?? 1];
+                    } elseif (!empty($row[0])) {
+                        $items[] = ['brand_name' => $row[0]];
+                    }
+                }
+                fclose($handle);
+            }
+        }
+
+        $count = 0;
+        foreach ($items as $item) {
+            $name = trim($item['brand_name'] ?? '');
+            if ($name) {
+                Brand::updateOrCreate(
+                    ['brand_name' => $name],
+                    ['status' => 1, 'deleted' => 0]
+                );
+                $count++;
+            }
+        }
+
+        return response()->json(['message' => "Successfully imported/updated {$count} brands."]);
+    }
+
+    public function exportCategories(Request $request)
+    {
+        $categories = Category::with('subCategories')->where('deleted', 0)->orderBy('category_name')->get();
+        if ($request->query('format') === 'json') {
+            return response()->json($categories);
+        }
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="navsa_categories_' . date('Y-m-d') . '.csv"',
+        ];
+
+        $callback = function () use ($categories) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, ['Category ID', 'Category Name', 'SubCategory Name', 'Group Code', 'Status']);
+            foreach ($categories as $c) {
+                if ($c->subCategories && count($c->subCategories) > 0) {
+                    foreach ($c->subCategories as $sc) {
+                        fputcsv($file, [$c->id, $c->category_name, $sc->sub_category_name, $sc->group_code ?? '', $sc->status ? 'Active' : 'Inactive']);
+                    }
+                } else {
+                    fputcsv($file, [$c->id, $c->category_name, '', '', $c->status ? 'Active' : 'Inactive']);
+                }
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function importCategories(Request $request)
+    {
+        $items = $request->input('items', []);
+
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $ext = strtolower($file->getClientOriginalExtension());
+            if ($ext === 'json') {
+                $items = json_decode(file_get_contents($file->getRealPath()), true) ?? [];
+            } else {
+                $handle = fopen($file->getRealPath(), 'r');
+                fgetcsv($handle);
+                while (($row = fgetcsv($handle)) !== false) {
+                    if (!empty($row[1])) {
+                        $items[] = [
+                            'category_name'     => $row[1],
+                            'sub_category_name' => $row[2] ?? null,
+                            'group_code'        => $row[3] ?? null,
+                        ];
+                    }
+                }
+                fclose($handle);
+            }
+        }
+
+        $count = 0;
+        foreach ($items as $item) {
+            $catName = trim($item['category_name'] ?? '');
+            if (!$catName) continue;
+
+            $cat = Category::firstOrCreate(['category_name' => $catName], ['status' => 1, 'deleted' => 0]);
+            $count++;
+
+            if (!empty($item['sub_category_name'])) {
+                $subName = trim($item['sub_category_name']);
+                SubCategory::firstOrCreate([
+                    'category_id' => $cat->id,
+                    'sub_category_name' => $subName,
+                ], [
+                    'group_code' => $item['group_code'] ?? null,
+                    'status' => 1,
+                    'deleted' => 0
+                ]);
+            }
+        }
+
+        return response()->json(['message' => "Successfully imported {$count} category records."]);
+    }
+
+    public function exportFullBackup(Request $request)
+    {
+        $data = [
+            'exported_at' => now()->toIso8601String(),
+            'products'   => Product::where('deleted', 0)->get(),
+            'brands'     => Brand::where('deleted', 0)->get(),
+            'categories' => Category::with('subCategories')->where('deleted', 0)->get(),
+            'banners'    => HomeBanner::all(),
+            'pdfs'       => Pdf::all(),
+        ];
+
+        return response()->json($data, 200, [
+            'Content-Disposition' => 'attachment; filename="navsa_full_backup_' . date('Y-m-d_H-i') . '.json"',
+        ]);
+    }
+
+    public function importFullRestore(Request $request)
+    {
+        $content = null;
+        if ($request->hasFile('file')) {
+            $content = file_get_contents($request->file('file')->getRealPath());
+        } elseif ($request->filled('json_data')) {
+            $content = $request->input('json_data');
+        }
+
+        if (!$content) {
+            return response()->json(['error' => 'No JSON restore data provided.'], 422);
+        }
+
+        $backup = json_decode($content, true);
+        if (!$backup || !is_array($backup)) {
+            return response()->json(['error' => 'Invalid JSON structure.'], 422);
+        }
+
+        $restored = [
+            'brands'     => 0,
+            'categories' => 0,
+            'products'   => 0,
+        ];
+
+        if (!empty($backup['brands'])) {
+            foreach ($backup['brands'] as $b) {
+                if (!empty($b['brand_name'])) {
+                    Brand::updateOrCreate(
+                        ['brand_name' => $b['brand_name']],
+                        ['status' => $b['status'] ?? 1, 'deleted' => 0]
+                    );
+                    $restored['brands']++;
+                }
+            }
+        }
+
+        if (!empty($backup['categories'])) {
+            foreach ($backup['categories'] as $c) {
+                if (!empty($c['category_name'])) {
+                    $cat = Category::updateOrCreate(
+                        ['category_name' => $c['category_name']],
+                        ['status' => $c['status'] ?? 1, 'deleted' => 0]
+                    );
+                    $restored['categories']++;
+
+                    if (!empty($c['sub_categories'])) {
+                        foreach ($c['sub_categories'] as $sc) {
+                            if (!empty($sc['sub_category_name'])) {
+                                SubCategory::updateOrCreate([
+                                    'category_id' => $cat->id,
+                                    'sub_category_name' => $sc['sub_category_name']
+                                ], [
+                                    'group_code' => $sc['group_code'] ?? null,
+                                    'status' => $sc['status'] ?? 1,
+                                    'deleted' => 0
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!empty($backup['products'])) {
+            foreach ($backup['products'] as $p) {
+                $code = $p['navsa_product_code'] ?? null;
+                $desc = $p['description'] ?? null;
+                if ($code || $desc) {
+                    Product::updateOrCreate(
+                        ['navsa_product_code' => $code],
+                        [
+                            'description'    => $desc ?: $code,
+                            'unit_size'      => $p['unit_size'] ?? null,
+                            'case_quantity'  => $p['case_quantity'] ?? 1,
+                            'price_per_unit' => $p['price_per_unit'] ?? 0,
+                            'price_per_case' => $p['price_per_case'] ?? 0,
+                            'stock'          => $p['stock'] ?? 0,
+                            'status'         => $p['status'] ?? 1,
+                            'deleted'        => 0
+                        ]
+                    );
+                    $restored['products']++;
+                }
+            }
+        }
+
+        return response()->json([
+            'message' => 'Full catalogue restore completed successfully.',
+            'restored' => $restored
+        ]);
+    }
 }

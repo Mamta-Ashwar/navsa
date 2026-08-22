@@ -764,6 +764,7 @@ import {
   CircleCheck,
   ShoppingBag,
   FileBarChart,
+  ArrowDownUp,
 } from 'lucide-react';
 
 import '../admin.css';
@@ -779,6 +780,7 @@ import AdminPdfs from './admin/AdminPdfs';
 import AdminRoles from './admin/AdminRoles';
 import AdminOrders from './admin/AdminOrders';
 import AdminReports from './admin/AdminReports';
+import AdminImportExport from './admin/AdminImportExport';
 import { useAuth } from '../context/AuthContext';
 
 const navigationSections = [
@@ -866,6 +868,12 @@ const navigationSections = [
         icon: FileBarChart,
         permission: null,
       },
+      {
+        to: '/admin/import-export',
+        label: 'Import & Export',
+        icon: ArrowDownUp,
+        permission: null,
+      },
     ],
   },
   {
@@ -941,6 +949,11 @@ const pageDetails = {
     eyebrow: 'Content',
     title: 'Order & Stock Reports',
     description: 'List of completed trade orders, product stock prices, case quantities, and sales summaries.',
+  },
+  '/admin/import-export': {
+    eyebrow: 'Content',
+    title: 'Import & Export',
+    description: 'Batch import, export, backup and restore products, brands, categories and catalogue data.',
   },
   '/admin/roles': {
     eyebrow: 'Administration',
@@ -1278,6 +1291,10 @@ function AdminShell() {
               element={<AdminReports />}
             />
             <Route
+              path="import-export"
+              element={<AdminImportExport />}
+            />
+            <Route
               path="roles"
               element={hasPermission('roles.view') ? <AdminRoles /> : <Navigate to="/admin/dashboard" replace />}
             />
@@ -1436,6 +1453,125 @@ function AdminLogin() {
               {!loading && <ChevronRight size={18} />}
             </button>
           </form>
+
+          <div
+            style={{
+              marginTop: '20px',
+              padding: '14px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '10px',
+              fontSize: '12px',
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 600,
+                color: '#e2e8f0',
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <ShieldCheck size={16} style={{ color: '#3b82f6' }} />
+              Quick Admin Login (One-Click Fill)
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('admin@navsa.com');
+                  setPassword('navsa2024');
+                  setError('');
+                }}
+                style={{
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid #3b82f6',
+                  color: '#93c5fd',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                ⚡ Super Admin
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('admin@navsainternational.com');
+                  setPassword('Admin@123');
+                  setError('');
+                }}
+                style={{
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid #3b82f6',
+                  color: '#93c5fd',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                👤 Admin User
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('info@navsainternational.com');
+                  setPassword('Info@123');
+                  setError('');
+                }}
+                style={{
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#cbd5e1',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                👔 Director
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('sales@navsainternational.com');
+                  setPassword('Sales@123');
+                  setError('');
+                }}
+                style={{
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#cbd5e1',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                💼 Sales Admin
+              </button>
+            </div>
+          </div>
 
           <div className="admin-login-security" style={{ marginTop: '16px' }}>
             <ShieldCheck size={17} />

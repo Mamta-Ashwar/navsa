@@ -19,6 +19,13 @@ class AdminAuth
      */
     public function handle(Request $request, Closure $next)
     {
+        if ($request->filled('token') && !$request->headers->has('Authorization')) {
+            $request->headers->set('Authorization', 'Bearer ' . $request->query('token'));
+        }
+        if ($request->hasHeader('X-Navsa-Auth') && !$request->headers->has('Authorization')) {
+            $request->headers->set('Authorization', $request->header('X-Navsa-Auth'));
+        }
+
         $adminUser = Auth::guard('sanctum')->user();
 
         if (!$adminUser) {

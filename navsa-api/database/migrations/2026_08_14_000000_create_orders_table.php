@@ -15,7 +15,8 @@ return new class extends Migration
             Schema::create('orders', function (Blueprint $table) {
                 $table->id();
                 $table->string('order_number')->unique();
-                $table->foreignId('user_id')->constrained()->onDelete('cascade');
+                $table->integer('user_id')->nullable();
+                $table->index('user_id');
                 $table->string('status')->default('pending');
                 $table->decimal('total_amount', 10, 2)->default(0.00);
                 $table->integer('total_items')->default(0);
@@ -32,7 +33,8 @@ return new class extends Migration
             Schema::create('order_items', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('order_id')->constrained('orders')->onDelete('cascade');
-                $table->foreignId('product_id')->nullable()->constrained('products')->onDelete('set null');
+                $table->integer('product_id')->nullable();
+                $table->index('product_id');
                 $table->string('navsa_product_code')->nullable();
                 $table->string('product_name');
                 $table->decimal('unit_price', 10, 2)->default(0.00);

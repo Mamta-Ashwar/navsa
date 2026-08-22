@@ -198,4 +198,14 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
     Route::get('/orders',                          [AdminController::class, 'orders']);
     Route::get('/orders/{id}',                     [AdminController::class, 'showOrder']);
     Route::patch('/orders/{id}/status',            [AdminController::class, 'updateOrderStatus']);
+
+    // Data Import & Export
+    Route::get('/export/products',                 [AdminController::class, 'exportProducts']);
+    Route::post('/import/products',                [AdminController::class, 'importProducts']);
+    Route::get('/export/brands',                   [AdminController::class, 'exportBrands']);
+    Route::post('/import/brands',                  [AdminController::class, 'importBrands']);
+    Route::get('/export/categories',               [AdminController::class, 'exportCategories']);
+    Route::post('/import/categories',              [AdminController::class, 'importCategories']);
+    Route::get('/export/full-backup',              [AdminController::class, 'exportFullBackup']);
+    Route::post('/import/full-restore',             [AdminController::class, 'importFullRestore']);
 });
