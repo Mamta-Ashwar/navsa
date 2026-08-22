@@ -46,6 +46,7 @@ import './AdminCategories.css'
 const MAIN_TAB = 'main'
 const SUB_TAB = 'sub'
 const STATUS_FILTERS = ['all', 'active', 'hidden', 'deleted']
+const STORAGE_TYPES = ['Ambient', 'Frozen', 'Chilled']
 
 const asBool = (value) => value === true || value === 1 || value === '1'
 const isDeleted = (row) => asBool(row?.deleted)
@@ -168,6 +169,7 @@ export default function AdminCategories() {
   const [editingId, setEditingId] = useState(null)
   const [rowBusyId, setRowBusyId] = useState(null)
   const [imageBusyId, setImageBusyId] = useState(null)
+  const [storageBusyId, setStorageBusyId] = useState(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [adding, setAdding] = useState(false)
   const [message, setMessage] = useState(null)
@@ -176,6 +178,7 @@ export default function AdminCategories() {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newSubName, setNewSubName] = useState('')
   const [newSubGroupCode, setNewSubGroupCode] = useState('')
+  const [newSubStorageType, setNewSubStorageType] = useState('Ambient')
   const [newSubCategoryId, setNewSubCategoryId] = useState('')
 
   const [confirmDialog, setConfirmDialog] = useState({
@@ -257,6 +260,7 @@ export default function AdminCategories() {
       return (
         (row.sub_category_name || '').toLowerCase().includes(query)
         || (row.group_code || '').toLowerCase().includes(query)
+        || (row.storage_type || '').toLowerCase().includes(query)
         || (row.category?.category_name || '').toLowerCase().includes(query)
         || String(row.id).includes(query)
       )
@@ -332,9 +336,11 @@ export default function AdminCategories() {
         category_id: categoryId,
         sub_category_name: name,
         group_code: groupCode,
+        storage_type: newSubStorageType,
       })
       setNewSubName('')
       setNewSubGroupCode('')
+      setNewSubStorageType('Ambient')
       showMessage('success', `“${name}” was added as a subcategory.`)
       await load()
     } catch (error) {
@@ -387,6 +393,7 @@ export default function AdminCategories() {
           category_id: data.category_id,
           sub_category_name: data.sub_category_name,
           group_code: data.group_code,
+          storage_type: row.storage_type || 'Ambient',
           status: asBool(row.status) ? 1 : 0,
         })
         showMessage('success', `“${data.sub_category_name}” was updated.`)
@@ -397,6 +404,40 @@ export default function AdminCategories() {
       showMessage('error', error.message)
     } finally {
       setRowBusyId(null)
+    }
+  }
+
+  const changeSubCategoryStorage = async (row, nextStorageType) => {
+    if (
+      tab !== SUB_TAB
+      || isDeleted(row)
+      || storageBusyId
+      || !STORAGE_TYPES.includes(nextStorageType)
+      || nextStorageType === row.storage_type
+    ) {
+      return
+    }
+
+    setStorageBusyId(Number(row.id))
+    try {
+      const result = await updateSubCategory(row.id, {
+        category_id: Number(row.category_id),
+        sub_category_name: row.sub_category_name,
+        group_code: row.group_code,
+        storage_type: nextStorageType,
+        status: asBool(row.status) ? 1 : 0,
+      })
+
+      const productCount = Number(result?.storage_products_updated ?? row.products_count ?? 0)
+      showMessage(
+        'success',
+        `“${row.sub_category_name}” is now ${nextStorageType}. ${productCount.toLocaleString()} linked product${productCount === 1 ? '' : 's'} updated too.`,
+      )
+      await load()
+    } catch (error) {
+      showMessage('error', error.message || 'Unable to update the storage type.')
+    } finally {
+      setStorageBusyId(null)
     }
   }
 
@@ -694,6 +735,17 @@ export default function AdminCategories() {
                 placeholder="Group code…"
                 maxLength={10}
               />
+              <select
+                className={`admin-input-field admin-categories-new-storage is-${newSubStorageType.toLowerCase()}`}
+                value={newSubStorageType}
+                onChange={(event) => setNewSubStorageType(event.target.value)}
+                aria-label="Storage type for new subcategory"
+                title="Storage type"
+              >
+                {STORAGE_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={addSubCategory}
@@ -716,7 +768,7 @@ export default function AdminCategories() {
               setSearch(event.target.value)
               setSelectedIds(new Set())
             }}
-            placeholder={tab === MAIN_TAB ? 'Search main categories or ID…' : 'Search subcategories, main category, group code or ID…'}
+            placeholder={tab === MAIN_TAB ? 'Search main categories or ID…' : 'Search subcategories, main category, group code, storage type or ID…'}
             aria-label={`Search ${currentTabTitle}`}
           />
           {search && (
@@ -823,8 +875,8 @@ export default function AdminCategories() {
                     <th>Subcategory</th>
                     <th>Main Category</th>
                     <th>Group Code</th>
+                    <th>Storage Type</th>
                     <th>Products</th>
-                    <th>Status</th>
                     <th>Actions</th>
                   </>
                 )}
@@ -834,7 +886,8 @@ export default function AdminCategories() {
               {filteredRows.map((row) => {
                 const checked = selectedIds.has(Number(row.id))
                 const imageBusy = Number(imageBusyId) === Number(row.id)
-                const busy = Number(rowBusyId) === Number(row.id) || imageBusy
+                const storageBusy = Number(storageBusyId) === Number(row.id)
+                const busy = Number(rowBusyId) === Number(row.id) || imageBusy || storageBusy
                 const deleted = isDeleted(row)
                 const imageUrl = tab === MAIN_TAB ? categoryImageUrl(row) : ''
                 const parentDeleted = tab === SUB_TAB && isDeleted(row.category)
@@ -930,15 +983,40 @@ export default function AdminCategories() {
                           </div>
                         </td>
                         <td><code className="admin-categories-code">{row.group_code || '—'}</code></td>
+                        <td>
+                          <select
+                            className={`admin-categories-storage-select ${
+                              row.storage_type
+                                ? `is-${String(row.storage_type).toLowerCase()}`
+                                : 'is-unmapped'
+                            }`}
+                            value={row.storage_type || ''}
+                            disabled={storageBusy || deleted}
+                            onChange={(event) => changeSubCategoryStorage(row, event.target.value)}
+                            aria-label={`Storage type for ${row.sub_category_name}`}
+                            title={
+                              deleted
+                                ? 'Restore this subcategory before changing its storage type.'
+                                : `Stored in storage_group_mapping for ${row.group_code}. Changing this also updates linked products.`
+                            }
+                          >
+                            {!row.storage_type && <option value="" disabled>Not mapped</option>}
+                            {STORAGE_TYPES.map((type) => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </td>
                         <td><span className="admin-categories-number">{Number(row.products_count ?? 0).toLocaleString()}</span></td>
                       </>
                     )}
 
-                    <td>
-                      <span className={`admin-categories-status ${deleted ? 'is-deleted' : asBool(row.status) ? 'is-active' : 'is-hidden'}`}>
-                        {statusLabel(row)}
-                      </span>
-                    </td>
+                    {tab === MAIN_TAB && (
+                      <td>
+                        <span className={`admin-categories-status ${deleted ? 'is-deleted' : asBool(row.status) ? 'is-active' : 'is-hidden'}`}>
+                          {statusLabel(row)}
+                        </span>
+                      </td>
+                    )}
 
                     <td>
                       <div className="admin-categories-actions">

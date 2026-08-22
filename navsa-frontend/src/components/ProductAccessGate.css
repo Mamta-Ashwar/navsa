@@ -1,0 +1,115 @@
+.product-access-gate-section {
+  width: 100%;
+  min-height: 520px;
+  display: grid;
+  place-items: center;
+  padding: 72px 24px;
+  background:
+    radial-gradient(circle at top left, rgba(18, 146, 166, 0.08), transparent 34%),
+    linear-gradient(180deg, #edf9fa 0%, #ffffff 100%);
+}
+
+.product-access-gate-panel {
+  width: min(100%, 640px);
+  padding: 60px 28px;
+  text-align: center;
+  color: #ffffff;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+}
+
+.product-access-gate-icon {
+  margin-bottom: 20px;
+  font-size: 56px;
+  line-height: 1;
+}
+
+.product-access-gate-panel h1 {
+  margin: 0 0 12px;
+  color: #ffffff;
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.product-access-gate-panel p {
+  max-width: 540px;
+  margin: 0 auto 32px;
+  color: #94a3b8;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.product-access-gate-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.product-access-gate-login,
+.product-access-gate-register {
+  min-width: 150px;
+  padding: 12px 28px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.product-access-gate-login {
+  color: #ffffff;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+}
+
+.product-access-gate-login:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.product-access-gate-register {
+  color: #dbeafe;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.product-access-gate-register:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .product-access-gate-section {
+    min-height: 460px;
+    padding: 40px 16px;
+  }
+
+  .product-access-gate-panel {
+    padding: 44px 20px;
+  }
+
+  .product-access-gate-icon {
+    font-size: 48px;
+  }
+
+  .product-access-gate-panel h1 {
+    font-size: 23px;
+  }
+
+  .product-access-gate-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .product-access-gate-login,
+  .product-access-gate-register {
+    width: 100%;
+  }
+}

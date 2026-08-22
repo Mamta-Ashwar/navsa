@@ -75,7 +75,7 @@ export default function HeaderMain() {
   const navigate = useNavigate()
   const { wishlistCount, basketCount, basketTotal } = useCart()
   const { formatPrice } = useCurrency()
-  const { user, logout } = useAuth()
+  const { user, logout, isAuthenticated, token } = useAuth()
 
   const searchAreaRef = useRef(null)
   const searchRequestRef = useRef(null)
@@ -85,6 +85,7 @@ export default function HeaderMain() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isSticky, setIsSticky] = useState(false)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   const [search, setSearch] = useState('')
   const [suggestions, setSuggestions] = useState([])
@@ -224,6 +225,17 @@ export default function HeaderMain() {
   useEffect(() => {
     const value = search.trim()
 
+    // Product search suggestions are trade-only. Logged-out visitors can still
+    // submit a search and will land on the existing Shop access gate.
+    if (!isAuthenticated || !token) {
+      searchRequestRef.current?.abort()
+      setSuggestions([])
+      setSuggestionsLoading(false)
+      setShowSuggestions(false)
+      setActiveSuggestion(-1)
+      return
+    }
+
     if (value.length < 3) {
       searchRequestRef.current?.abort()
       setSuggestions([])
@@ -246,7 +258,10 @@ export default function HeaderMain() {
           `${BASE}/products?search=${encodeURIComponent(value)}&page=1`,
           { 
             signal: controller.signal,
-            headers: { 'Accept': 'application/json' }
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            }
           }
         )
 
@@ -272,7 +287,26 @@ export default function HeaderMain() {
     }, 260)
 
     return () => window.clearTimeout(timer)
-  }, [search])
+  }, [search, isAuthenticated, token])
+
+  async function handleSignOut() {
+    if (loggingOut) return
+
+    setProfileDropdownOpen(false)
+    setLoggingOut(true)
+
+    try {
+      await logout()
+      navigate('/', { replace: true })
+    } catch (error) {
+      console.error('Sign out failed:', error)
+      window.alert(
+        'Sign out could not be completed. Please check your connection and try again.'
+      )
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   function closeMenus() {
     setShopOpen(false)
@@ -426,14 +460,11 @@ export default function HeaderMain() {
                     <button
                       type="button"
                       className="header-main__profile-menu-item header-main__profile-menu-logout"
-                      onClick={() => {
-                        setProfileDropdownOpen(false)
-                        logout()
-                        navigate('/')
-                      }}
+                      onClick={handleSignOut}
+                      disabled={loggingOut}
                     >
                       <FaSignOutAlt />
-                      <span>Sign Out</span>
+                      <span>{loggingOut ? 'Signing Out…' : 'Sign Out'}</span>
                     </button>
                   </div>
                 </div>
@@ -628,8 +659,8 @@ export default function HeaderMain() {
               onChange={event => setSearch(event.target.value)}
               onFocus={() => {
                 if (
-                  search.trim().length >= 3 ||
-                  suggestionsLoading
+                  isAuthenticated &&
+                  (search.trim().length >= 3 || suggestionsLoading)
                 ) {
                   setShowSuggestions(true)
                 }

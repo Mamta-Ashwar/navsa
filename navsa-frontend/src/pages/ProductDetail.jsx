@@ -13,6 +13,7 @@ import NoticeModal from '../components/NoticeModal'
 import { getProductImageUrl } from '../utils/imageHelper'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
 import { useAuth } from '../context/AuthContext'
+import ProductAccessGate from '../components/ProductAccessGate'
 import './ProductDetail.css'
 
 function hasValidEanChecksum(digits) {
@@ -139,7 +140,7 @@ function calculateIndicativeBbd(shelfLifeDays) {
 export default function ProductDetail() {
   const { id } = useParams()
   const { formatPrice: money } = useCurrency()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, token } = useAuth()
 
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -189,10 +190,26 @@ export default function ProductDetail() {
   } = useShipping()
 
   useEffect(() => {
+    // Do not even request product details while logged out. This prevents a
+    // direct /product/:id visit from briefly loading or exposing product data.
+    if (!isAuthenticated) {
+      setProduct(null)
+      setError(null)
+      setLoading(false)
+      setImageFailed(false)
+      return
+    }
+
     setLoading(true)
+    setError(null)
     setImageFailed(false)
     const BASE = import.meta.env.VITE_API_URL || '/api'
-    fetch(`${BASE}/products/${id}`, { headers: { 'Accept': 'application/json' } })
+    fetch(`${BASE}/products/${id}`, {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    })
       .then(response => {
         if (!response.ok) {
           throw new Error('Product not found')
@@ -208,7 +225,7 @@ export default function ProductDetail() {
         setError(fetchError.message || 'Unable to load product')
         setLoading(false)
       })
-  }, [id])
+  }, [id, isAuthenticated, token])
 
   useEffect(() => {
     if (!showShippingModal) return
@@ -298,6 +315,10 @@ export default function ProductDetail() {
       ...current,
       open: false,
     }))
+  }
+
+  if (!isAuthenticated) {
+    return <ProductAccessGate />
   }
 
   if (loading) {
@@ -901,8 +922,8 @@ export default function ProductDetail() {
                   Access is limited to approved trade/wholesale customers. Please log in or register your business to place orders.
                 </p>
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                  <Link to="/login" className="admin-btn admin-btn-primary" style={{ padding: '10px 24px', textDecoration: 'none' }}>Log In</Link>
-                  <Link to="/register" className="admin-btn admin-btn-ghost" style={{ padding: '10px 24px', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)' }}>Become a Customer</Link>
+                  <Link to="/account/login" className="admin-btn admin-btn-primary" style={{ padding: '10px 24px', textDecoration: 'none' }}>Log In</Link>
+                  <Link to="/account/create" className="admin-btn admin-btn-ghost" style={{ padding: '10px 24px', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)' }}>Become a Customer</Link>
                 </div>
               </div>
             )}

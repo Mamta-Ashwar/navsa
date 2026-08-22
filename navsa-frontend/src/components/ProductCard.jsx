@@ -371,6 +371,14 @@ function ProductCard({
   function openProduct(event) {
     event?.stopPropagation()
     setShowQtyModal(false)
+
+    // Product details are trade-only. Logged-out visitors are sent to the
+    // same access gate used by the Shop page instead of /product/:id.
+    if (!isAuthenticated) {
+      navigate('/shop')
+      return
+    }
+
     navigate(`/product/${product.id}`)
   }
 
@@ -679,7 +687,7 @@ function ProductCard({
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
-                  navigate('/login')
+                  navigate('/shop')
                 }}
               >
                 <span>🔒</span> Login to view price

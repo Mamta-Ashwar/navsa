@@ -264,96 +264,6 @@ function StockModal({ product, onClose, onSaved }) {
   )
 }
 
-function PromoModal({ product, featureType, onClose, onSaved }) {
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const [price, setPrice] = useState(product.promotion_price ?? '')
-  const [fromDate, setFromDate] = useState(todayStr)
-  const [toDate, setToDate] = useState(product.to_date ? String(product.to_date).slice(0, 10) : '')
-  const [busy, setBusy] = useState(false)
-
-  const featureTitle =
-    featureType === 'new_arrival' ? '⭐ Set New Arrival Promotion' :
-    featureType === 'wigig' ? '🏷️ Set WIGIG Clearance Offer' :
-    '🔥 Set Best-Seller Promotion'
-
-  const save = async () => {
-    if (!price || !fromDate || !toDate) {
-      alert('All 3 fields are required to enable a promotion: Offer Price (£), Start Date, and End Date.')
-      return
-    }
-
-    if (fromDate && toDate && toDate < fromDate) {
-      alert('Invalid Date Range: End Date (' + toDate + ') must be on or after Start Date (' + fromDate + ').')
-      return
-    }
-
-    if (product?.promotion_price != null && Number(price) === Number(product.promotion_price)) {
-      const confirmOldPrice = window.confirm(
-        'Do you want older promotion price (£' + product.promotion_price + ')? Please confirm to keep it or Cancel to change it.'
-      )
-      if (!confirmOldPrice) return
-    }
-
-    setBusy(true)
-    try {
-      const payload = {
-        promotion_price: price || null,
-        from_date: fromDate || null,
-        to_date: toDate || null,
-      }
-
-      if (featureType === 'new_arrival') {
-        await toggleNewArrival(product.id, payload)
-      } else if (featureType === 'wigig') {
-        await toggleOffer(product.id, payload)
-      } else if (featureType === 'best_seller') {
-        await toggleBestOffer(product.id, payload)
-      }
-
-      onSaved()
-      onClose()
-    } catch (e) {
-      alert(e.message || 'Error saving promotion settings')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-      <div className="glass-panel" style={{ padding:'28px', width:'380px', background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px' }}>
-        <h3 style={{ marginBottom:'8px', fontSize: '18px', color: '#fff', fontWeight: 700 }}>{featureTitle}</h3>
-        <p style={{ color:'#94a3b8', fontSize:'12px', marginBottom:'20px' }}>
-          {product.navsa_product_code || '—'} — {product.description?.slice(0, 45)}
-        </p>
-
-        <div style={{ display: 'grid', gap: '14px' }}>
-          <div className="admin-input-group">
-            <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>Offer Price (£)</label>
-            <input type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 9.99" className="admin-input-field" style={{ width:'100%' }} />
-          </div>
-
-          <div className="admin-input-group">
-            <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>Start Date (From Date)</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="admin-input-field" style={{ width:'100%', colorScheme: 'dark' }} />
-          </div>
-
-          <div className="admin-input-group">
-            <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>End Date (To Date)</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="admin-input-field" style={{ width:'100%', colorScheme: 'dark' }} />
-          </div>
-        </div>
-
-        <div style={{ display:'flex', gap:'10px', marginTop:'24px' }}>
-          <button onClick={save} disabled={busy} className="admin-btn admin-btn-primary" style={{ flex:1 }}>
-            {busy ? 'Saving…' : '✓ Save & Enable'}
-          </button>
-          <button onClick={onClose} className="admin-btn admin-btn-ghost" style={{ flex:1, border: '1px solid rgba(255,255,255,0.1)' }}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 const ALL_TABS = ['General', 'Advanced', 'Extra', 'Images', 'Related', 'Website description']
 
@@ -1679,14 +1589,46 @@ function ErpImportModal({ onClose, onImportDone, mode = 'erp' }) {
 }
 
 
+const PRODUCT_SORT_OPTIONS = [
+  { value: 'title_asc', label: 'Title (A-Z)', sortBy: 'description', order: 'asc' },
+  { value: 'title_desc', label: 'Title (Z-A)', sortBy: 'description', order: 'desc' },
+  { value: 'title_asc_live', label: 'Title (A-Z) (Live)', sortBy: 'description', order: 'asc', visibility: '1' },
+  { value: 'title_asc_hidden', label: 'Title (A-Z) (Not Live)', sortBy: 'description', order: 'asc', visibility: '0' },
+  { value: 'price_asc', label: 'Price (Low-High)', sortBy: 'price', order: 'asc' },
+  { value: 'price_desc', label: 'Price (High-Low)', sortBy: 'price', order: 'desc' },
+  { value: 'navsa_asc', label: 'NAVSA Code (Low-High)', sortBy: 'navsa_product_code', order: 'asc' },
+  { value: 'navsa_desc', label: 'NAVSA Code (High-Low)', sortBy: 'navsa_product_code', order: 'desc' },
+  { value: 'date_desc', label: 'Date added (High-Low)', sortBy: 'created_at', order: 'desc' },
+]
+
+const PRODUCT_PER_PAGE_OPTIONS = [25, 50, 75, 100]
+
+function formatProductCount(value) {
+  return new Intl.NumberFormat('en-GB').format(Number(value || 0))
+}
+
 export default function AdminProducts() {
   const [data,    setData]    = useState({ data: [], last_page: 1, total: 0 })
   const [page,    setPage]    = useState(1)
   const [search,  setSearch]  = useState('')
   const [filter,  setFilter]  = useState({})
+  const [sortOption, setSortOption] = useState('date_desc')
+  const [perPage, setPerPage] = useState(25)
   const [loading, setLoading] = useState(true)
+
+  // Admin product search suggestions. These deliberately use the existing
+  // authenticated admin product endpoint so the suggestions obey the same
+  // search rules and filters as the table below.
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false)
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1)
+  const [searchHasFocus, setSearchHasFocus] = useState(false)
+  const searchAreaRef = useRef(null)
+  const searchInputRef = useRef(null)
+  const suggestionRequestRef = useRef(0)
   const [stockModal, setStockModal] = useState(null)
-  const [promoModal, setPromoModal] = useState(null)
+  const [featureToggleBusy, setFeatureToggleBusy] = useState(null)
   const [editModal, setEditModal]   = useState(null)
   const [detailModal, setDetailModal] = useState(null)
 
@@ -1714,47 +1656,313 @@ export default function AdminProducts() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = { page, per_page: 20, ...filter }
+      const selectedSort =
+        PRODUCT_SORT_OPTIONS.find(option => option.value === sortOption)
+        || PRODUCT_SORT_OPTIONS[PRODUCT_SORT_OPTIONS.length - 1]
+
+      const params = {
+        page,
+        per_page: perPage,
+        sort_by: selectedSort.sortBy,
+        order: selectedSort.order,
+        ...filter,
+      }
+
       if (search) params.search = search
+
       const res = await getProducts(params)
       setData(res)
     } catch (e) { alert(e.message) }
     finally { setLoading(false) }
-  }, [page, search, filter])
+  }, [page, perPage, search, filter, sortOption])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
     clearBulkSelection()
-  }, [search, filter, clearBulkSelection])
+  }, [search, filter, sortOption, perPage, clearBulkSelection])
+
+  // Close the suggestion panel when Admin clicks anywhere outside the search area.
+  useEffect(() => {
+    const handleOutsideSearchClick = (event) => {
+      if (searchAreaRef.current && !searchAreaRef.current.contains(event.target)) {
+        setSearchHasFocus(false)
+        setShowSearchSuggestions(false)
+        setActiveSuggestionIndex(-1)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideSearchClick)
+    return () => document.removeEventListener('mousedown', handleOutsideSearchClick)
+  }, [])
+
+  // Debounced live suggestions. We keep this independent from the table's
+  // existing search request so pagination and the rest of Product Management
+  // continue to behave exactly as before.
+  useEffect(() => {
+    const value = search.trim()
+
+    if (!searchHasFocus || value.length < 3) {
+      suggestionRequestRef.current += 1
+      setSearchSuggestions([])
+      setSuggestionsLoading(false)
+      setActiveSuggestionIndex(-1)
+
+      if (!searchHasFocus || value.length === 0) {
+        setShowSearchSuggestions(false)
+      } else {
+        // Match the public-site search behaviour: show a small minimum-length hint.
+        setShowSearchSuggestions(true)
+      }
+      return
+    }
+
+    const requestId = suggestionRequestRef.current + 1
+    suggestionRequestRef.current = requestId
+    setSuggestionsLoading(true)
+    setShowSearchSuggestions(true)
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = {
+          page: 1,
+          per_page: 8,
+          ...filter,
+          search: value,
+        }
+
+        const response = await getProducts(params)
+
+        if (suggestionRequestRef.current !== requestId) return
+
+        const matches = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response)
+            ? response
+            : []
+
+        setSearchSuggestions(matches.slice(0, 8))
+        setActiveSuggestionIndex(-1)
+      } catch (error) {
+        if (suggestionRequestRef.current !== requestId) return
+        console.error('Admin product suggestion search failed:', error)
+        setSearchSuggestions([])
+      } finally {
+        if (suggestionRequestRef.current === requestId) {
+          setSuggestionsLoading(false)
+        }
+      }
+    }, 260)
+
+    return () => window.clearTimeout(timer)
+  }, [search, filter, searchHasFocus])
+
+  const chooseSearchSuggestion = (product) => {
+    if (!product) return
+
+    // NAVSA Product Code is unique, therefore selecting a suggestion narrows
+    // the Product Management table to that exact product.
+    const exactSearch =
+      product.navsa_product_code
+      || product.barcode_ean
+      || product.description
+      || ''
+
+    setSearch(String(exactSearch))
+    setPage(1)
+    setSearchSuggestions([])
+    setSuggestionsLoading(false)
+    setShowSearchSuggestions(false)
+    setActiveSuggestionIndex(-1)
+    setSearchHasFocus(false)
+
+    requestAnimationFrame(() => searchInputRef.current?.blur())
+  }
+
+  const handleAdminSearchKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setShowSearchSuggestions(false)
+      setActiveSuggestionIndex(-1)
+      setSearchHasFocus(false)
+      searchInputRef.current?.blur()
+      return
+    }
+
+    if (!showSearchSuggestions || search.trim().length < 3) return
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+
+      if (searchSuggestions.length === 0) return
+
+      setActiveSuggestionIndex(current => {
+        if (current < 0) return 0
+        return Math.min(current + 1, searchSuggestions.length - 1)
+      })
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+
+      if (searchSuggestions.length === 0) return
+
+      setActiveSuggestionIndex(current => {
+        if (current <= 0) return -1
+        return current - 1
+      })
+      return
+    }
+
+    if (
+      event.key === 'Enter'
+      && activeSuggestionIndex >= 0
+      && searchSuggestions[activeSuggestionIndex]
+    ) {
+      event.preventDefault()
+      chooseSearchSuggestion(searchSuggestions[activeSuggestionIndex])
+    }
+  }
+
+  const currentSort =
+    PRODUCT_SORT_OPTIONS.find(option => option.value === sortOption)
+    || PRODUCT_SORT_OPTIONS[PRODUCT_SORT_OPTIONS.length - 1]
+
+  const handleSortChange = (nextValue) => {
+    const previousSort =
+      PRODUCT_SORT_OPTIONS.find(option => option.value === sortOption)
+    const nextSort =
+      PRODUCT_SORT_OPTIONS.find(option => option.value === nextValue)
+      || PRODUCT_SORT_OPTIONS[PRODUCT_SORT_OPTIONS.length - 1]
+
+    setSortOption(nextSort.value)
+    setPage(1)
+
+    setFilter(current => {
+      const updated = { ...current }
+
+      // The two ShopTill-e style title options intentionally include
+      // visibility. Keep the existing Visibility dropdown synchronized so
+      // bulk-selection and every other Admin action sees the same result set.
+      if (nextSort.visibility != null) {
+        updated.live_for_web = nextSort.visibility
+      } else if (previousSort?.visibility != null) {
+        delete updated.live_for_web
+      }
+
+      return updated
+    })
+  }
+
+  const handleVisibilityFilterChange = (value) => {
+    setFilter(current => {
+      const updated = { ...current }
+
+      if (value === '') delete updated.live_for_web
+      else updated.live_for_web = value
+
+      return updated
+    })
+    setPage(1)
+
+    // If Admin manually changes Visibility after choosing a Live/Not Live
+    // title sort, keep the sort label truthful by falling back to normal A-Z.
+    if (currentSort.visibility != null) {
+      setSortOption('title_asc')
+    }
+  }
+
+  const handlePerPageChange = (value) => {
+    const nextPerPage = Number(value)
+    if (!PRODUCT_PER_PAGE_OPTIONS.includes(nextPerPage)) return
+
+    setPerPage(nextPerPage)
+    setPage(1)
+  }
+
+  const goToPreviousPage = () => {
+    setPage(current => Math.max(1, current - 1))
+  }
+
+  const goToNextPage = () => {
+    setPage(current => Math.min(Number(data.last_page || 1), current + 1))
+  }
+
+  const rangeFrom = Number(data.from || 0)
+  const rangeTo = Number(data.to || 0)
+  const resultTotal = Number(data.total || 0)
+  const allProductsTotal = Number(data.all_products_total ?? data.total ?? 0)
+
+  const renderProductPager = (placement) => (
+    <div className={`admin-products-pager admin-products-pager--${placement}`}>
+      <span className="admin-products-pager__range">
+        {formatProductCount(rangeFrom)} - {formatProductCount(rangeTo)} of {formatProductCount(resultTotal)}
+      </span>
+
+      <div className="admin-products-pager__buttons">
+        <button
+          type="button"
+          onClick={goToPreviousPage}
+          disabled={page <= 1 || loading}
+          className="admin-products-pager__button"
+          title="Previous page"
+          aria-label="Previous page"
+        >
+          <span aria-hidden="true">←</span>
+          <span className="admin-products-pager__button-text">Previous</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={goToNextPage}
+          disabled={page >= Number(data.last_page || 1) || loading}
+          className="admin-products-pager__button"
+          title="Next page"
+          aria-label="Next page"
+        >
+          <span className="admin-products-pager__button-text">Next</span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    </div>
+  )
 
   const doToggleWeb = async (id) => {
     try { await toggleWeb(id); load() } catch (e) { alert(e.message) }
   }
 
-  const doToggleOffer = async (product) => {
-    if (product.is_offer) {
-      try { await toggleOffer(product.id); load() } catch (e) { alert(e.message) }
-    } else {
-      setPromoModal({ product, featureType: 'wigig' })
+  const runFeatureToggle = async (product, feature) => {
+    if (!product || product.deleted) return
+
+    const busyKey = `${feature}:${product.id}`
+    if (featureToggleBusy === busyKey) return
+
+    setFeatureToggleBusy(busyKey)
+    setActionError('')
+
+    try {
+      if (feature === 'new_arrival') {
+        await toggleNewArrival(product.id)
+      } else if (feature === 'wigig') {
+        await toggleOffer(product.id)
+      } else if (feature === 'best_seller') {
+        await toggleBestOffer(product.id)
+      }
+
+      await load()
+    } catch (error) {
+      setActionError(
+        error?.message
+        || `Unable to update ${feature === 'new_arrival' ? 'New Arrivals' : feature === 'wigig' ? 'WIGIG' : 'Best Sellers'}.`
+      )
+    } finally {
+      setFeatureToggleBusy(null)
     }
   }
 
-  const doToggleBestOffer = async (product) => {
-    if (product.is_best_offer) {
-      try { await toggleBestOffer(product.id); load() } catch (e) { alert(e.message) }
-    } else {
-      setPromoModal({ product, featureType: 'best_seller' })
-    }
-  }
-
-  const doToggleNewArrival = async (product) => {
-    if (product.is_new_arrival) {
-      try { await toggleNewArrival(product.id); load() } catch (e) { alert(e.message) }
-    } else {
-      setPromoModal({ product, featureType: 'new_arrival' })
-    }
-  }
+  const doToggleOffer = (product) => runFeatureToggle(product, 'wigig')
+  const doToggleBestOffer = (product) => runFeatureToggle(product, 'best_seller')
+  const doToggleNewArrival = (product) => runFeatureToggle(product, 'new_arrival')
 
   const requestProductAction = (product, action) => {
     setConfirmDialog({
@@ -2205,7 +2413,6 @@ export default function AdminProducts() {
         </div>
       )}
       {stockModal   && <StockModal product={stockModal} onClose={() => setStockModal(null)} onSaved={load} />}
-      {promoModal   && <PromoModal product={promoModal.product} featureType={promoModal.featureType} onClose={() => setPromoModal(null)} onSaved={load} />}
       {editModal    && <EditProductModal product={editModal} onClose={() => setEditModal(null)} onSaved={load} />}
       {detailModal  && <ProductDetailModal product={detailModal} onClose={() => setDetailModal(null)} />}
       {erpModalOpen   && <ErpImportModal mode="erp" onClose={() => setErpModalOpen(false)} onImportDone={load} />}
@@ -2214,7 +2421,12 @@ export default function AdminProducts() {
       <div className="admin-flex-between mb-6">
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ marginBottom: '0.25rem' }}>Products Management</h1>
+            <div className="admin-products-page-title">
+              <h1>All Products</h1>
+              <span className="admin-products-page-title__count">
+                {formatProductCount(allProductsTotal)}
+              </span>
+            </div>
             <p style={{ color: '#94a3b8' }}>Manage your catalog and inventory</p>
           </div>
           <button
@@ -2238,15 +2450,163 @@ export default function AdminProducts() {
       </div>
 
       <div className="glass-panel" style={{ padding: '1.5rem' }}>
+        <div className="admin-products-toolbar">
+          <div className="admin-products-toolbar__sort">
+            <label htmlFor="admin-products-sort">Sort by</label>
+            <select
+              id="admin-products-sort"
+              className="admin-input-field admin-products-toolbar__select"
+              value={sortOption}
+              onChange={event => handleSortChange(event.target.value)}
+            >
+              {PRODUCT_SORT_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="admin-products-toolbar__per-page">
+            <label htmlFor="admin-products-per-page">Per page</label>
+            <select
+              id="admin-products-per-page"
+              className="admin-input-field admin-products-toolbar__select admin-products-toolbar__per-page-select"
+              value={perPage}
+              onChange={event => handlePerPageChange(event.target.value)}
+            >
+              {PRODUCT_PER_PAGE_OPTIONS.map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="admin-products-toolbar__pager">
+            {renderProductPager('top')}
+          </div>
+        </div>
+
         {/* Search + Filters */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search description, NAVSA Product Code, barcode…"
-            className="admin-input-field" style={{ flex: '1', minWidth: '200px' }} />
+        <div className="admin-products-search-filter-row">
+          <div className="admin-product-search-autocomplete" ref={searchAreaRef}>
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={event => {
+                setSearch(event.target.value)
+                setPage(1)
+                setSearchHasFocus(true)
+
+                if (event.target.value.trim().length > 0) {
+                  setShowSearchSuggestions(true)
+                } else {
+                  setShowSearchSuggestions(false)
+                  setSearchSuggestions([])
+                  setActiveSuggestionIndex(-1)
+                }
+              }}
+              onFocus={() => {
+                setSearchHasFocus(true)
+                if (search.trim().length > 0) {
+                  setShowSearchSuggestions(true)
+                }
+              }}
+              onKeyDown={handleAdminSearchKeyDown}
+              placeholder="Search description, NAVSA Product Code, barcode…"
+              className="admin-input-field admin-product-search-autocomplete__input"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={showSearchSuggestions}
+              aria-controls="admin-product-search-suggestions"
+              aria-activedescendant={
+                activeSuggestionIndex >= 0
+                  ? `admin-product-suggestion-${searchSuggestions[activeSuggestionIndex]?.id}`
+                  : undefined
+              }
+              autoComplete="off"
+            />
+
+            {showSearchSuggestions && (
+              <div
+                id="admin-product-search-suggestions"
+                className="admin-product-search-suggestions"
+                role="listbox"
+                aria-label="Product search suggestions"
+              >
+                {search.trim().length > 0 && search.trim().length < 3 && (
+                  <div className="admin-product-search-suggestions__status">
+                    Type at least 3 characters to see product suggestions.
+                  </div>
+                )}
+
+                {search.trim().length >= 3 && suggestionsLoading && (
+                  <div className="admin-product-search-suggestions__status">
+                    <span className="admin-product-search-suggestions__spinner" aria-hidden="true" />
+                    Searching products…
+                  </div>
+                )}
+
+                {search.trim().length >= 3
+                  && !suggestionsLoading
+                  && searchSuggestions.length === 0 && (
+                    <div className="admin-product-search-suggestions__status">
+                      No matching products found.
+                    </div>
+                  )}
+
+                {search.trim().length >= 3
+                  && !suggestionsLoading
+                  && searchSuggestions.map((product, index) => {
+                    const isActive = index === activeSuggestionIndex
+                    const brandName = product.brand?.brand_name || 'No brand'
+                    const categoryName = product.category?.category_name || 'No category'
+
+                    return (
+                      <button
+                        key={product.id}
+                        id={`admin-product-suggestion-${product.id}`}
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        className={`admin-product-search-suggestion${isActive ? ' is-active' : ''}`}
+                        onMouseEnter={() => setActiveSuggestionIndex(index)}
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => chooseSearchSuggestion(product)}
+                      >
+                        <span className="admin-product-search-suggestion__main">
+                          <strong>{product.description || 'Unnamed product'}</strong>
+                          <span className="admin-product-search-suggestion__meta">
+                            <span className="admin-product-search-suggestion__code">
+                              {product.navsa_product_code || 'No NAVSA code'}
+                            </span>
+                            <span aria-hidden="true">•</span>
+                            <span>{brandName}</span>
+                            <span aria-hidden="true">•</span>
+                            <span>{categoryName}</span>
+                          </span>
+                        </span>
+
+                        {product.deleted ? (
+                          <span className="admin-product-search-suggestion__badge is-deleted">Deleted</span>
+                        ) : product.live_for_web ? (
+                          <span className="admin-product-search-suggestion__badge is-live">Live</span>
+                        ) : (
+                          <span className="admin-product-search-suggestion__badge is-hidden">Hidden</span>
+                        )}
+                      </button>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
           {sel(filter.is_offer  || '', v => { setFilter(f=>({...f, is_offer: v})); setPage(1) },
             [{ value:'1', label:'Offer Only' },{ value:'0', label:'Non-Offer' }], 'All — Offers')}
-          {sel(filter.live_for_web || '', v => { setFilter(f=>({...f, live_for_web: v})); setPage(1) },
-            [{ value:'1', label:'Live Only' },{ value:'0', label:'Hidden Only' }], 'All — Visibility')}
+          {sel(
+            filter.live_for_web || '',
+            handleVisibilityFilterChange,
+            [{ value:'1', label:'Live Only' },{ value:'0', label:'Hidden Only' }],
+            'All — Visibility'
+          )}
           <button
             onClick={() => {
               setFilter(filter.show_deleted ? {} : { show_deleted: 1 })
@@ -2468,8 +2828,9 @@ export default function AdminProducts() {
                        <label className="admin-switch">
                         <input
                           type="checkbox"
-                          checked={Boolean(p.is_new_arrival && (!p.to_date || String(p.to_date).slice(0, 10) >= new Date().toISOString().slice(0, 10)))}
-                          onChange={() => !p.deleted && doToggleNewArrival(p)}
+                          checked={Boolean(p.is_new_arrival)}
+                          disabled={p.deleted || featureToggleBusy === `new_arrival:${p.id}`}
+                          onChange={() => doToggleNewArrival(p)}
                         />
                         <span className="admin-slider"></span>
                       </label>
@@ -2478,8 +2839,9 @@ export default function AdminProducts() {
                        <label className="admin-switch">
                         <input
                           type="checkbox"
-                          checked={Boolean(p.is_offer && (!p.to_date || String(p.to_date).slice(0, 10) >= new Date().toISOString().slice(0, 10)))}
-                          onChange={() => !p.deleted && doToggleOffer(p)}
+                          checked={Boolean(p.is_offer)}
+                          disabled={p.deleted || featureToggleBusy === `wigig:${p.id}`}
+                          onChange={() => doToggleOffer(p)}
                         />
                         <span className="admin-slider"></span>
                       </label>
@@ -2488,8 +2850,9 @@ export default function AdminProducts() {
                        <label className="admin-switch">
                         <input
                           type="checkbox"
-                          checked={Boolean(p.is_best_offer && (!p.to_date || String(p.to_date).slice(0, 10) >= new Date().toISOString().slice(0, 10)))}
-                          onChange={() => !p.deleted && doToggleBestOffer(p)}
+                          checked={Boolean(p.is_best_offer)}
+                          disabled={p.deleted || featureToggleBusy === `best_seller:${p.id}`}
+                          onChange={() => doToggleBestOffer(p)}
                         />
                         <span className="admin-slider"></span>
                       </label>
@@ -2587,13 +2950,9 @@ export default function AdminProducts() {
           )}
         </div>
 
-        {/* Pagination */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', alignItems: 'center', color: '#94a3b8', fontSize: '13px' }}>
-          <span>{data.total} products — Page {data.current_page} of {data.last_page}</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page <= 1} className="admin-btn admin-btn-ghost" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>← Prev</button>
-            <button onClick={() => setPage(p => Math.min(data.last_page, p+1))} disabled={page >= data.last_page} className="admin-btn admin-btn-ghost" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>Next →</button>
-          </div>
+        {/* Bottom pagination mirrors the top controls after the last product. */}
+        <div className="admin-products-bottom-pagination">
+          {renderProductPager('bottom')}
         </div>
       </div>
     </div>
