@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useShipping } from '../context/ShippingContext'
@@ -8,6 +9,10 @@ import ShippingSelector from '../components/ShippingSelector'
 import { getCountries } from '../services/shippingService'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
 import './Basket.css'
+
+function getUnitsPerCase(item) {
+  return Number(item?.units_of || item?.inner_case_quantity || 1)
+}
 
 function kg(value) {
   return Number(value || 0).toLocaleString(undefined, {
@@ -61,21 +66,28 @@ function Basket() {
 
     try {
       const BASE = import.meta.env.VITE_API_URL || '/api'
+      const token = localStorage.getItem('token') || localStorage.getItem('admin_token')
+
       const itemsPayload = basketItems.map(item => ({
         product_id: item.id,
         navsa_product_code: item.navsa_product_code || item.reference || '',
         product_name: item.description || 'Product',
         unit_price: Number(item.price || 0),
         case_quantity: Number(item.totalCases || 1),
-        units_per_case: unitsPerCase(item),
+        units_per_case: getUnitsPerCase(item),
       }))
+
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
 
       const response = await fetch(`${BASE}/orders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           user_id: user.id,
           items: itemsPayload,
@@ -85,8 +97,10 @@ function Basket() {
         }),
       })
 
+      const data = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        throw new Error('Order creation failed')
+        throw new Error(data.message || `Order creation failed (Status ${response.status})`)
       }
 
       clearBasket()
@@ -94,9 +108,7 @@ function Basket() {
       navigate('/profile')
     } catch (err) {
       console.error('Checkout error:', err)
-      clearBasket()
-      alert('Your order quote request has been recorded. Redirecting to your profile…')
-      navigate('/profile')
+      alert(err.message || 'Unable to place order. Please check your connection and try again.')
     } finally {
       setSubmittingOrder(false)
     }

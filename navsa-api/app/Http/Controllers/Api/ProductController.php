@@ -45,6 +45,9 @@ class ProductController extends Controller
 
     public function index(Request $request)
     {
+        // Automatic lifecycle enforcement: no daily manual command required.
+        Product::expireObsoleteProducts();
+
         $query = Product::with(['brand', 'category', 'subCategory', 'supplier'])
             ->where('deleted', false)
             ->where('live_for_web', 1);
@@ -185,6 +188,9 @@ class ProductController extends Controller
 
     public function show($id)
     {
+        // Expire before returning a product so an overdue item can never be shown.
+        Product::expireObsoleteProducts();
+
         $product = Product::with([
             'brand',
             'category',

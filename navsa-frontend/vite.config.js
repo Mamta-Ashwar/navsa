@@ -69,6 +69,10 @@ export default defineConfig({
     tailwindcss(),
   ],
 
+  optimizeDeps: {
+    include: ['xlsx'],
+  },
+
   server: {
     host: 'localhost',
     port: 5173,
