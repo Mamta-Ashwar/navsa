@@ -22,6 +22,10 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+// Public homepage product highlights use a deliberately limited payload.
+// Full catalogue and single-product data are protected inside ProductController
+// and require a valid approved Sanctum user token.
+Route::get('/public/products/home', [ProductController::class, 'homeHighlights']);
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{id}', [ProductController::class, 'show']);
 
@@ -90,7 +94,9 @@ Route::post('/login', [AdminController::class, 'login'])->name('login');
 Route::match(['get', 'options'], '/login', function() {
     return response()->json(['message' => 'Login requires a POST request.'], 405);
 });
-Route::post('/logout', [AdminController::class, 'logout'])->middleware('admin.auth');
+// Any authenticated Sanctum user (approved customer or administrator) may
+// revoke their own current API token. Admin-only routes remain protected below.
+Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');
 
 Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
 

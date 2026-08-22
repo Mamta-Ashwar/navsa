@@ -114,7 +114,7 @@
 }
 
 .admin-categories-add__sub-form {
-  grid-template-columns: minmax(190px, 0.9fr) minmax(220px, 1.4fr) minmax(130px, 0.6fr) auto;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(210px, 1.3fr) minmax(125px, 0.55fr) minmax(125px, 0.55fr) auto;
 }
 
 .admin-categories-add .admin-input-field {
@@ -549,6 +549,74 @@
   white-space: nowrap;
 }
 
+
+.admin-categories-storage-select {
+  min-width: 108px;
+  height: 34px;
+  padding: 0 30px 0 12px;
+  border: 1.5px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  outline: 0;
+  color: #e2e8f0;
+  background-color: rgba(15, 23, 42, 0.7);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.admin-categories-storage-select:hover:not(:disabled),
+.admin-categories-storage-select:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.045);
+}
+
+.admin-categories-storage-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-categories-storage-select.is-ambient,
+.admin-categories-new-storage.is-ambient {
+  border-color: #22c55e;
+  color: #4ade80;
+  background-color: rgba(34, 197, 94, 0.07);
+}
+
+.admin-categories-storage-select.is-chilled,
+.admin-categories-new-storage.is-chilled {
+  border-color: #3b82f6;
+  color: #60a5fa;
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+.admin-categories-storage-select.is-frozen,
+.admin-categories-new-storage.is-frozen {
+  border-color: #ef4444;
+  color: #f87171;
+  background-color: rgba(239, 68, 68, 0.07);
+}
+
+.admin-categories-storage-select.is-unmapped {
+  border-color: #f59e0b;
+  color: #fbbf24;
+  background-color: rgba(245, 158, 11, 0.08);
+}
+
+.admin-categories-storage-select option,
+.admin-categories-new-storage option {
+  color: #111827;
+  background: #ffffff;
+  text-transform: none;
+  font-weight: 700;
+}
+
+.admin-categories-new-storage {
+  font-weight: 800;
+}
+
 .admin-categories-status {
   display: inline-flex;
   align-items: center;
@@ -647,7 +715,7 @@
   }
 
   .admin-categories-table {
-    min-width: 1080px;
+    min-width: 1180px;
   }
 }
 

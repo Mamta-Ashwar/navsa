@@ -109,7 +109,9 @@ function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/shop" element={<Shop />} />
                 <Route path="/account/login" element={<Account />} />
+                <Route path="/login" element={<Navigate to="/account/login" replace />} />
                 <Route path="/account/create" element={<BecomeCustomer />} />
+                <Route path="/register" element={<Navigate to="/account/create" replace />} />
                 <Route path="/account/supplier" element={<BecomeSupplier />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/account/profile" element={<Profile />} />

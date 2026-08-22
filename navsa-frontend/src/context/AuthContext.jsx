@@ -64,14 +64,18 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     const tokenToRevoke =
-      token || localStorage.getItem('admin_token') || null;
+      token ||
+      localStorage.getItem('token') ||
+      localStorage.getItem('admin_token') ||
+      null;
 
     if (!tokenToRevoke) {
       clearLocalSession();
       return;
     }
 
-    // Revoke the current Sanctum token on the server first.
+    // Revoke the current Sanctum token on the server first. This endpoint
+    // is shared by approved customers and administrators.
     // If revocation fails because of a network/server problem, keep the
     // local session so the user can retry instead of showing a false
     // "securely signed out" state while the token is still valid.

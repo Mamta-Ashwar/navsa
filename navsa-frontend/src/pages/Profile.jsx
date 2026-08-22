@@ -33,6 +33,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [loggingOut, setLoggingOut] = useState(false)
 
   const [orders, setOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
@@ -243,6 +244,25 @@ export default function Profile() {
     }
   }
 
+  const handleSignOut = async () => {
+    if (loggingOut) return
+
+    setErrorMessage('')
+    setLoggingOut(true)
+
+    try {
+      await logout()
+      navigate('/', { replace: true })
+    } catch (err) {
+      console.error('Sign out failed:', err)
+      setErrorMessage(
+        'Sign out could not be completed. Please check your connection and try again.'
+      )
+    } finally {
+      setLoggingOut(false)
+    }
+  }
+
   return (
     <main className="profile-page">
       <div className="profile-container">
@@ -259,12 +279,10 @@ export default function Profile() {
           <button
             type="button"
             className="profile-logout-btn"
-            onClick={() => {
-              logout()
-              navigate('/')
-            }}
+            onClick={handleSignOut}
+            disabled={loggingOut}
           >
-            <FaSignOutAlt /> Sign Out
+            <FaSignOutAlt /> {loggingOut ? 'Signing Out…' : 'Sign Out'}
           </button>
         </div>
 

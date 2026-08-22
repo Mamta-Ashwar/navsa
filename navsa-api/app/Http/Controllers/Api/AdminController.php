@@ -164,7 +164,13 @@ class AdminController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        $token = $user?->currentAccessToken();
+
+        if ($token) {
+            $token->delete();
+        }
+
         return response()->json(['message' => 'Logged out successfully']);
     }
 
@@ -293,21 +299,8 @@ class AdminController extends Controller
         // into Deleted Items. No daily CMD step is required.
         Product::expireObsoleteProducts();
 
-        // Auto-expire offers/promotions whose to_date has passed
-        $today = now()->toDateString();
-        Product::where(function ($q) {
-            $q->where('is_offer', 1)
-              ->orWhere('is_new_arrival', 1)
-              ->orWhere('is_best_offer', 1);
-        })
-        ->whereNotNull('to_date')
-        ->where('to_date', '<', $today)
-        ->update([
-            'is_offer' => 0,
-            'is_new_arrival' => 0,
-            'is_best_offer' => 0,
-            'offer_label' => null,
-        ]);
+        // New Arrivals, WIGIG and Best Sellers are manual catalogue-section
+        // flags. Product price/date fields must never turn these flags on or off.
 
         $q = Product::with(['brand', 'category']);
 
@@ -331,10 +324,55 @@ class AdminController extends Controller
         if ($request->filled('live_for_web')) $q->where('live_for_web', $request->live_for_web);
         if ($request->filled('low_stock'))    $q->where('stock_quantity', '<=', 5);
 
-        $paginator = $q->orderBy('id', 'desc')->paginate((int)$request->get('per_page', 25));
+        $allowedSorts = [
+            'description',
+            'price',
+            'navsa_product_code',
+            'created_at',
+            'id',
+        ];
+
+        $sortBy = (string) $request->get('sort_by', 'created_at');
+        $sortOrder = strtolower((string) $request->get('order', 'desc'));
+
+        if (!in_array($sortBy, $allowedSorts, true)) {
+            $sortBy = 'created_at';
+        }
+
+        if (!in_array($sortOrder, ['asc', 'desc'], true)) {
+            $sortOrder = 'desc';
+        }
+
+        // Keep products with no price at the end instead of allowing NULL values
+        // to appear before valid prices in Price (Low-High).
+        if ($sortBy === 'price') {
+            $q->orderByRaw('price IS NULL ASC')
+              ->orderBy('price', $sortOrder);
+        } else {
+            $q->orderBy($sortBy, $sortOrder);
+        }
+
+        // Stable secondary order prevents rows from jumping between pages when
+        // several products share the same title, price or date.
+        $q->orderBy('id', $sortOrder === 'asc' ? 'asc' : 'desc');
+
+        $requestedPerPage = (int) $request->get('per_page', 25);
+        $allowedPerPage = [8, 25, 50, 75, 100]; // 8 is used by the Admin live-suggestion dropdown.
+        $perPage = in_array($requestedPerPage, $allowedPerPage, true)
+            ? $requestedPerPage
+            : 25;
+
+        $paginator = $q->paginate($perPage);
         $this->attachAdminImageMetadata($paginator->getCollection());
 
-        return $paginator;
+        // ShopTill-e style page title needs the complete non-deleted catalogue
+        // count, independent of the current search/filter/pagination.
+        $allProductsTotal = Product::where('deleted', false)->count();
+
+        $payload = $paginator->toArray();
+        $payload['all_products_total'] = $allProductsTotal;
+
+        return response()->json($payload);
     }
 
     private function validateBulkProductSelection(Request $request): array
@@ -909,49 +947,57 @@ class AdminController extends Controller
     public function toggleOffer(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $product = Product::findOrFail($id);
         $new = $product->is_offer ? 0 : 1;
-        $data = ['is_offer' => $new];
-        if ($request->filled('offer_label')) $data['offer_label'] = $request->offer_label;
-        if ($request->has('promotion_price')) $data['promotion_price'] = $request->promotion_price ?: null;
-        if ($request->has('from_date')) $data['from_date'] = $request->from_date ?: null;
-        if ($request->has('to_date')) $data['to_date'] = $request->to_date ?: null;
-        if (!$new) $data['offer_label'] = null; // Clear label when removing offer
-        $product->update($data);
-        return response()->json($product->fresh());
+
+        // WIGIG membership is controlled only by this flag.
+        // Do not modify product price, promotion price, dates or labels.
+        $product->update(['is_offer' => $new]);
+
+        return response()->json([
+            'id' => (int) $id,
+            'is_offer' => $new,
+        ]);
     }
 
     public function clearOffers(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
-        Product::where('is_offer', 1)->update(['is_offer' => 0, 'offer_label' => null]);
+        Product::where('is_offer', 1)->update(['is_offer' => 0]);
         return response()->json(['success' => true]);
     }
 
     public function toggleBestOffer(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $product = Product::findOrFail($id);
         $new = $product->is_best_offer ? 0 : 1;
-        $data = ['is_best_offer' => $new];
-        if ($request->has('promotion_price')) $data['promotion_price'] = $request->promotion_price ?: null;
-        if ($request->has('from_date')) $data['from_date'] = $request->from_date ?: null;
-        if ($request->has('to_date')) $data['to_date'] = $request->to_date ?: null;
-        $product->update($data);
-        return response()->json($product->fresh());
+
+        // Best Sellers membership is controlled only by this flag.
+        $product->update(['is_best_offer' => $new]);
+
+        return response()->json([
+            'id' => (int) $id,
+            'is_best_offer' => $new,
+        ]);
     }
 
     public function toggleNewArrival(Request $request, $id)
     {
         if (!$this->auth($request)) return $this->deny();
+
         $product = Product::findOrFail($id);
         $new = $product->is_new_arrival ? 0 : 1;
-        $data = ['is_new_arrival' => $new];
-        if ($request->has('promotion_price')) $data['promotion_price'] = $request->promotion_price ?: null;
-        if ($request->has('from_date')) $data['from_date'] = $request->from_date ?: null;
-        if ($request->has('to_date')) $data['to_date'] = $request->to_date ?: null;
-        $product->update($data);
-        return response()->json($product->fresh());
+
+        // New Arrivals membership is controlled only by this flag.
+        $product->update(['is_new_arrival' => $new]);
+
+        return response()->json([
+            'id' => (int) $id,
+            'is_new_arrival' => $new,
+        ]);
     }
 
     public function updateStock(Request $request, $id)
@@ -1991,6 +2037,14 @@ class AdminController extends Controller
         if (!$this->auth($request)) return $this->deny();
 
         $query = SubCategory::query()
+            ->select('sub_categories.*')
+            ->selectSub(function ($mappingQuery) {
+                $mappingQuery
+                    ->from('storage_group_mapping')
+                    ->select('storage_type')
+                    ->whereColumn('storage_group_mapping.group_code', 'sub_categories.group_code')
+                    ->limit(1);
+            }, 'storage_type')
             ->with('category:id,category_name,status,deleted')
             ->withCount('products');
 
@@ -2021,6 +2075,7 @@ class AdminController extends Controller
             'category_id' => ['required', 'integer', 'exists:categories,id'],
             'sub_category_name' => ['required', 'string', 'max:100'],
             'group_code' => ['required', 'string', 'max:10', $groupCodeRule],
+            'storage_type' => ['sometimes', 'required', Rule::in(['Ambient', 'Frozen', 'Chilled'])],
             'status' => ['sometimes', 'boolean'],
         ]);
 
@@ -2034,19 +2089,75 @@ class AdminController extends Controller
         return $validated;
     }
 
+    private function syncSubCategoryStorageMapping(
+        SubCategory $subCategory,
+        string $storageType,
+        ?string $previousGroupCode = null
+    ): int {
+        $groupCode = strtoupper(trim((string) $subCategory->group_code));
+        $previousGroupCode = strtoupper(trim((string) ($previousGroupCode ?? $groupCode)));
+        $subGroupName = trim((string) $subCategory->sub_category_name);
+
+        if ($groupCode === '') {
+            return 0;
+        }
+
+        if ($previousGroupCode !== '' && $previousGroupCode !== $groupCode) {
+            DB::table('storage_group_mapping')
+                ->where('group_code', $previousGroupCode)
+                ->delete();
+        }
+
+        $mappingExists = DB::table('storage_group_mapping')
+            ->where('group_code', $groupCode)
+            ->exists();
+
+        if ($mappingExists) {
+            DB::table('storage_group_mapping')
+                ->where('group_code', $groupCode)
+                ->update([
+                    'sub_group_name' => $subGroupName,
+                    'storage_type' => $storageType,
+                    'updated_at' => now(),
+                ]);
+        } else {
+            DB::table('storage_group_mapping')->insert([
+                'group_code' => $groupCode,
+                'sub_group_name' => $subGroupName,
+                'storage_type' => $storageType,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // Products and the website use products.storage_type at runtime.
+        // Keep every product assigned to this exact subcategory in sync immediately.
+        return Product::where('sub_category_id', $subCategory->id)
+            ->update(['storage_type' => $storageType]);
+    }
+
     public function createSubCategory(Request $request)
     {
         if (!$this->auth($request)) return $this->deny();
 
         $validated = $this->validatedSubCategoryPayload($request);
+        $storageType = $validated['storage_type'] ?? 'Ambient';
 
-        $subCategory = SubCategory::create([
-            'category_id' => (int) $validated['category_id'],
-            'sub_category_name' => trim($validated['sub_category_name']),
-            'group_code' => strtoupper(trim($validated['group_code'])),
-            'status' => 1,
-            'deleted' => false,
-        ]);
+        $subCategory = DB::transaction(function () use ($validated, $storageType) {
+            $subCategory = SubCategory::create([
+                'category_id' => (int) $validated['category_id'],
+                'sub_category_name' => trim($validated['sub_category_name']),
+                'group_code' => strtoupper(trim($validated['group_code'])),
+                'status' => 1,
+                'deleted' => false,
+            ]);
+
+            $this->syncSubCategoryStorageMapping($subCategory, $storageType);
+
+            return $subCategory;
+        });
+
+        $subCategory->setAttribute('storage_type', $storageType);
 
         return response()->json(
             $subCategory->load('category:id,category_name,status,deleted')->loadCount('products'),
@@ -2061,18 +2172,62 @@ class AdminController extends Controller
         $subCategory = SubCategory::findOrFail($id);
         $validated = $this->validatedSubCategoryPayload($request, $subCategory);
 
-        $subCategory->update([
-            'category_id' => (int) $validated['category_id'],
-            'sub_category_name' => trim($validated['sub_category_name']),
-            'group_code' => strtoupper(trim($validated['group_code'])),
-            'status' => array_key_exists('status', $validated)
-                ? (int) $validated['status']
-                : (int) $subCategory->status,
-        ]);
+        $previousGroupCode = strtoupper(trim((string) $subCategory->group_code));
+        $newGroupCode = strtoupper(trim($validated['group_code']));
+        $previousName = trim((string) $subCategory->sub_category_name);
+        $newName = trim($validated['sub_category_name']);
 
-        return response()->json(
-            $subCategory->fresh()->load('category:id,category_name,status,deleted')->loadCount('products')
-        );
+        $currentStorageType = DB::table('storage_group_mapping')
+            ->where('group_code', $previousGroupCode)
+            ->value('storage_type');
+
+        $storageType = $validated['storage_type']
+            ?? $currentStorageType
+            ?? 'Ambient';
+
+        $shouldSyncStorage =
+            array_key_exists('storage_type', $validated)
+            || $previousGroupCode !== $newGroupCode
+            || $previousName !== $newName;
+
+        $storageProductsUpdated = DB::transaction(function () use (
+            $subCategory,
+            $validated,
+            $previousGroupCode,
+            $newGroupCode,
+            $newName,
+            $storageType,
+            $shouldSyncStorage
+        ) {
+            $subCategory->update([
+                'category_id' => (int) $validated['category_id'],
+                'sub_category_name' => $newName,
+                'group_code' => $newGroupCode,
+                'status' => array_key_exists('status', $validated)
+                    ? (int) $validated['status']
+                    : (int) $subCategory->status,
+            ]);
+
+            if (!$shouldSyncStorage) {
+                return 0;
+            }
+
+            return $this->syncSubCategoryStorageMapping(
+                $subCategory->fresh(),
+                $storageType,
+                $previousGroupCode
+            );
+        });
+
+        $fresh = $subCategory
+            ->fresh()
+            ->load('category:id,category_name,status,deleted')
+            ->loadCount('products');
+
+        $fresh->setAttribute('storage_type', $storageType);
+        $fresh->setAttribute('storage_products_updated', $storageProductsUpdated);
+
+        return response()->json($fresh);
     }
 
     private function validateBulkSubCategoryIds(Request $request): array

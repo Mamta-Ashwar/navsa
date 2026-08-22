@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useShipping } from '../context/ShippingContext'
@@ -8,6 +9,10 @@ import ShippingSelector from '../components/ShippingSelector'
 import { getCountries } from '../services/shippingService'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
 import './Basket.css'
+
+function getUnitsPerCase(item) {
+  return Number(item?.units_of || item?.inner_case_quantity || 1)
+}
 
 function kg(value) {
   return Number(value || 0).toLocaleString(undefined, {
@@ -67,7 +72,7 @@ function Basket() {
         product_name: item.description || 'Product',
         unit_price: Number(item.price || 0),
         case_quantity: Number(item.totalCases || 1),
-        units_per_case: unitsPerCase(item),
+        units_per_case: getUnitsPerCase(item),
       }))
 
       const response = await fetch(`${BASE}/orders`, {
