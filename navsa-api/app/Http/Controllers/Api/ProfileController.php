@@ -166,10 +166,15 @@ class ProfileController extends Controller
                 'status' => 'processing',
                 'total_amount' => $validated['total_amount'],
                 'total_items' => count($validated['items']),
+                'total_weight_kg' => 0,
+                'total_volume_m3' => 0,
                 'shipping_method' => $validated['shipping_method'] ?? 'Standard Delivery',
                 'shipping_address' => $validated['shipping_address'] ?? '',
                 'notes' => $validated['notes'] ?? '',
             ]);
+
+            $totalWeightKg = 0.0;
+            $totalVolumeM3 = 0.0;
 
             foreach ($validated['items'] as $item) {
                 $unitPrice = (float) ($item['price'] ?? $item['unit_price'] ?? 0);
@@ -186,17 +191,49 @@ class ProfileController extends Controller
 
                 $subtotal = $givenSubtotal > 0 ? $givenSubtotal : ($unitPrice * $cases);
 
+                $productId = $item['product_id'] ?? $item['id'] ?? null;
+                $product = $productId ? Product::find($productId) : null;
+
+                if (!$product && !empty($item['navsa_product_code'])) {
+                    $product = Product::where('navsa_product_code', $item['navsa_product_code'])->first();
+                }
+
+                $unitsPerCase = (int) (
+                    $item['units_per_case']
+                    ?? $product?->units_of
+                    ?? $product?->inner_case_quantity
+                    ?? 1
+                );
+
+                if ($unitsPerCase <= 0) {
+                    $unitsPerCase = 1;
+                }
+
+                // Keep the legacy quantity column populated with the same case count.
+                // Newer frontend/profile logic uses case_quantity.
                 OrderItem::create([
                     'order_id' => $order->id,
-                    'product_id' => $item['product_id'] ?? $item['id'] ?? null,
+                    'product_id' => $productId,
                     'navsa_product_code' => $item['navsa_product_code'] ?? $item['reference'] ?? null,
                     'product_name' => $item['product_name'] ?? $item['description'] ?? 'Product',
+                    'quantity' => $cases,
+                    'qty_desc' => 'Case',
                     'unit_price' => $unitPrice,
                     'case_quantity' => $cases,
-                    'units_per_case' => $item['units_per_case'] ?? 1,
+                    'units_per_case' => $unitsPerCase,
                     'subtotal' => $subtotal,
                 ]);
+
+                if ($product) {
+                    $totalWeightKg += (float) ($product->weight ?? 0) * $unitsPerCase * $cases;
+                    $totalVolumeM3 += (float) ($product->volume ?? 0) * $cases;
+                }
             }
+
+            $order->update([
+                'total_weight_kg' => round($totalWeightKg, 3),
+                'total_volume_m3' => round($totalVolumeM3, 3),
+            ]);
 
             DB::commit();
 
@@ -245,7 +282,9 @@ class ProfileController extends Controller
                 'price' => $currentPrice,
                 'old_order_price' => (float) $item->unit_price,
                 'case_quantity' => $item->case_quantity,
-                'units_per_case' => $product ? ($product->unit_per_case ?? $item->units_per_case) : $item->units_per_case,
+                'units_per_case' => $product
+                    ? ((int) ($product->units_of ?? $product->inner_case_quantity ?? $item->units_per_case ?? 1))
+                    : ((int) ($item->units_per_case ?? 1)),
                 'web_image' => $product ? $product->web_image : null,
                 'brand_name' => $product ? $product->brand_name : '',
                 'storage_type' => $product ? $product->storage_type : 'Ambient',

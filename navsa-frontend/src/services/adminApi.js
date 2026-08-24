@@ -1,7 +1,7 @@
 // const BASE = import.meta.env.VITE_API_URL || '/api'
 
 // const headers = () => {
-//   const token = localStorage.getItem('admin_token')
+//   const token = sessionStorage.getItem('admin_token')
 
 //   const h = {
 //     'Content-Type': 'application/json',
@@ -22,7 +22,7 @@
 // }
 
 // const fileHeaders = () => {
-//   const token = localStorage.getItem('admin_token')
+//   const token = sessionStorage.getItem('admin_token')
 
 //   const h = {
 //     'Accept': 'application/json',
@@ -57,7 +57,7 @@
 // }
 
 // export const logoutAdmin = async (tokenOverride = null) => {
-//   const token = tokenOverride || localStorage.getItem('admin_token')
+//   const token = tokenOverride || sessionStorage.getItem('admin_token')
 
 //   const h = {
 //     'Accept': 'application/json',
@@ -246,7 +246,7 @@
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
 const headers = () => {
-  const token = localStorage.getItem('admin_token')
+  const token = sessionStorage.getItem('admin_token')
 
   const h = {
     'Content-Type': 'application/json',
@@ -267,7 +267,7 @@ const headers = () => {
 }
 
 const fileHeaders = () => {
-  const token = localStorage.getItem('admin_token')
+  const token = sessionStorage.getItem('admin_token')
 
   const h = {
     'Accept': 'application/json',
@@ -302,7 +302,7 @@ async function req(method, path, body) {
 }
 
 export const logoutAdmin = async (tokenOverride = null) => {
-  const token = tokenOverride || localStorage.getItem('admin_token')
+  const token = tokenOverride || sessionStorage.getItem('admin_token')
 
   const h = {
     'Accept': 'application/json',
@@ -505,7 +505,7 @@ export const updateOrderStatus = (id, status) => req('PATCH', `/orders/${id}/sta
 
 // Import & Export API functions
 export const exportProducts = (format = 'csv') => {
-  const token = localStorage.getItem('admin_token')
+  const token = sessionStorage.getItem('admin_token')
   window.open(`${BASE}/admin/export/products?format=${format}&token=${encodeURIComponent(token || '')}`, '_blank')
 }
 
@@ -521,7 +521,7 @@ export const importProductsFile = async (formData) => {
 export const importProductsJSON = (items) => req('POST', '/import/products', { items })
 
 export const exportBrands = (format = 'csv') => {
-  const token = localStorage.getItem('admin_token')
+  const token = sessionStorage.getItem('admin_token')
   window.open(`${BASE}/admin/export/brands?format=${format}&token=${encodeURIComponent(token || '')}`, '_blank')
 }
 
@@ -537,7 +537,7 @@ export const importBrandsFile = async (formData) => {
 export const importBrandsJSON = (items) => req('POST', '/import/brands', { items })
 
 export const exportCategories = (format = 'csv') => {
-  const token = localStorage.getItem('admin_token')
+  const token = sessionStorage.getItem('admin_token')
   window.open(`${BASE}/admin/export/categories?format=${format}&token=${encodeURIComponent(token || '')}`, '_blank')
 }
 

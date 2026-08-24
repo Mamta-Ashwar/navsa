@@ -43,6 +43,69 @@ class ProductController extends Controller
         }
     }
 
+
+    /**
+     * Public homepage-only product highlights.
+     *
+     * This method intentionally returns only the small subset of product fields
+     * needed by the logged-out homepage cards. Existing index() and show()
+     * behaviour below is left completely unchanged.
+     */
+    public function homeHighlights()
+    {
+        Product::expireObsoleteProducts();
+
+        $base = Product::query()
+            ->where('deleted', false)
+            ->where('live_for_web', 1);
+
+        $fields = [
+            'id',
+            'description',
+            'units_of',
+            'barcode_ean',
+            'layer_quantity',
+            'pallet_quantity',
+            'web_image',
+            'price_list',
+            'offer_label',
+            'is_new_arrival',
+            'is_offer',
+            'is_best_offer',
+        ];
+
+        // Keep the current manual-toggle behaviour exactly as your controller
+        // already uses it: section membership is determined by the flag only.
+        $newArrivals = (clone $base)
+            ->where('is_new_arrival', 1)
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get($fields);
+
+        $clearance = (clone $base)
+            ->where('is_offer', 1)
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get($fields);
+
+        $bestSellers = (clone $base)
+            ->where('is_best_offer', 1)
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get($fields);
+
+        $this->applyManualImageOverrides($newArrivals);
+        $this->applyManualImageOverrides($clearance);
+        $this->applyManualImageOverrides($bestSellers);
+
+        return response()->json([
+            'total_products' => (clone $base)->count(),
+            'new_arrivals' => $newArrivals,
+            'clearance' => $clearance,
+            'best_sellers' => $bestSellers,
+        ]);
+    }
+
     public function index(Request $request)
     {
         // Automatic lifecycle enforcement: no daily manual command required.

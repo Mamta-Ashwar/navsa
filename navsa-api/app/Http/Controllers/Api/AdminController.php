@@ -162,6 +162,71 @@ class AdminController extends Controller
         ]);
     }
 
+    /**
+     * Dedicated administrator sign-in.
+     *
+     * Public/customer login and administrator login intentionally use separate
+     * frontend sessions. This endpoint refuses approved customers/suppliers so
+     * a normal trade account can never become an admin session.
+     */
+    public function adminLogin(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Invalid email or password'], 401);
+        }
+
+        if ($user->status === 'frozen') {
+            return response()->json([
+                'message' => 'Your account has been frozen. Please contact support at info@navsainternational.com.'
+            ], 403);
+        }
+
+        if ($user->status === 'pending') {
+            return response()->json([
+                'message' => 'Please wait for approval of your account. You will be notified when able to login.'
+            ], 403);
+        }
+
+        if ($user->status === 'rejected') {
+            return response()->json([
+                'message' => 'Your account registration has been rejected. Please contact support.'
+            ], 403);
+        }
+
+        if ($user->status !== 'approved') {
+            return response()->json([
+                'message' => 'Please wait for approval of your account. You will be notified when able to login.'
+            ], 403);
+        }
+
+        // Keep this rule identical to AdminAuth middleware.
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'Administrator access required.'
+            ], 403);
+        }
+
+        $token = $user->createToken('admin_auth_token')->plainTextToken;
+
+        $roles = $user->getRoleNames();
+        $permissions = $user->getAllPermissions()->pluck('name');
+
+        return response()->json([
+            'message' => 'Administrator login successful',
+            'user' => $user,
+            'roles' => $roles,
+            'permissions' => $permissions,
+            'token' => $token
+        ]);
+    }
+
     public function logout(Request $request)
     {
         $user = $request->user();

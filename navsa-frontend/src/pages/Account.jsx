@@ -143,9 +143,15 @@ function Account() {
                 )}
                 <button
                   type="button"
-                  onClick={() => {
-                    logout()
-                    navigate('/')
+                  onClick={async () => {
+                    setError(null)
+                    try {
+                      await logout()
+                      navigate('/', { replace: true })
+                    } catch (logoutError) {
+                      console.error('Sign out failed:', logoutError)
+                      setError('Sign out could not be completed. Please try again.')
+                    }
                   }}
                   className="account-login-submit"
                   style={{ background: '#d32f2f', border: 'none', cursor: 'pointer' }}

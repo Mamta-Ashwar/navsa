@@ -14,6 +14,8 @@ class OrderItem extends Model
         'product_id',
         'navsa_product_code',
         'product_name',
+        'quantity',
+        'qty_desc',
         'unit_price',
         'case_quantity',
         'units_per_case',

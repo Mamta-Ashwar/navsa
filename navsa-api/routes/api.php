@@ -94,6 +94,13 @@ Route::post('/login', [AdminController::class, 'login'])->name('login');
 Route::match(['get', 'options'], '/login', function() {
     return response()->json(['message' => 'Login requires a POST request.'], 405);
 });
+
+// Dedicated administrator login. This is intentionally outside the admin.auth
+// group because no admin token exists until the credentials are verified.
+Route::post('/admin/login', [AdminController::class, 'adminLogin']);
+Route::match(['get', 'options'], '/admin/login', function() {
+    return response()->json(['message' => 'Administrator login requires a POST request.'], 405);
+});
 // Any authenticated Sanctum user (approved customer or administrator) may
 // revoke their own current API token. Admin-only routes remain protected below.
 Route::post('/logout', [AdminController::class, 'logout'])->middleware('auth:sanctum');

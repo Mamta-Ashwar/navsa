@@ -166,7 +166,7 @@ export default function Profile() {
       // Update AuthContext user data
       login({
         user: { ...user, ...formData },
-        token: localStorage.getItem('token') || localStorage.getItem('admin_token'),
+        token: localStorage.getItem('token'),
       })
 
       setSuccessMessage('Profile updated successfully!')
