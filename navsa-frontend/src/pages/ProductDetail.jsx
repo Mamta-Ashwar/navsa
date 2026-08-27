@@ -13,6 +13,7 @@ import NoticeModal from '../components/NoticeModal'
 import { getProductImageUrl } from '../utils/imageHelper'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
 import { useAuth } from '../context/AuthContext'
+import { fetchRegisteredCustomerCountry, isUnitedKingdomCountry, formatVatRate } from '../utils/vat'
 import ProductAccessGate from '../components/ProductAccessGate'
 import './ProductDetail.css'
 
@@ -140,11 +141,12 @@ function calculateIndicativeBbd(shelfLifeDays) {
 export default function ProductDetail() {
   const { id } = useParams()
   const { formatPrice: money } = useCurrency()
-  const { isAuthenticated, token } = useAuth()
+  const { isAuthenticated, token, user } = useAuth()
 
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [registeredCountry, setRegisteredCountry] = useState('')
 
   const [caseQty, setCaseQty] = useState(0)
   const [layerQty, setLayerQty] = useState(0)
@@ -226,6 +228,28 @@ export default function ProductDetail() {
         setLoading(false)
       })
   }, [id, isAuthenticated, token])
+
+  useEffect(() => {
+    let active = true
+
+    if (!isAuthenticated || !user) {
+      setRegisteredCountry('')
+      return () => { active = false }
+    }
+
+    fetchRegisteredCustomerCountry(user, token)
+      .then(country => {
+        if (active) setRegisteredCountry(country || '')
+      })
+      .catch(error => {
+        console.error('Could not resolve registered VAT country:', error)
+        if (active) setRegisteredCountry('')
+      })
+
+    return () => { active = false }
+  }, [isAuthenticated, token, user])
+
+  const isUKCustomer = isUnitedKingdomCountry(registeredCountry)
 
   useEffect(() => {
     if (!showShippingModal) return
@@ -833,6 +857,13 @@ export default function ProductDetail() {
                 label="Best Before Date (Indicative)"
                 value={calculateIndicativeBbd(product.shelf_life)}
               />
+
+              {isUKCustomer && (
+                <DetailRow
+                  label="VAT Rate (UK customers only)"
+                  value={`${formatVatRate(product.vat_rate)}%${product.vat_description ? ` — ${product.vat_description}` : ''}`}
+                />
+              )}
             </div>
 
             {isAuthenticated ? (

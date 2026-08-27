@@ -284,12 +284,15 @@ const fileHeaders = () => {
 async function readResponse(res) {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(
+    const error = new Error(
       data.message
       || data.error
       || Object.values(data.errors || {}).flat().join(', ')
       || `HTTP ${res.status}`,
     )
+    error.status = res.status
+    error.data = data
+    throw error
   }
   return data
 }
@@ -378,6 +381,19 @@ export const uploadErpExcel = async (formData) => {
   })
   return readResponse(res)
 }
+
+export const uploadBulkProductImages = async (formData) => {
+  const res = await fetch(`${BASE}/admin/product-images/bulk`, {
+    method: 'POST',
+    headers: fileHeaders(),
+    body: formData,
+  })
+  return readResponse(res)
+}
+
+export const auditBulkProductImages = (folder_name, supplier_indexes = []) => (
+  req('POST', '/product-images/audit', { folder_name, supplier_indexes })
+)
 
 export const getUsers = (params = {}) => {
   const qs = new URLSearchParams(params).toString()
@@ -502,6 +518,11 @@ export const getOrders = (params = {}) => {
 }
 export const getOrder = (id) => req('GET', `/orders/${id}`)
 export const updateOrderStatus = (id, status) => req('PATCH', `/orders/${id}/status`, { status })
+export const bulkUpdateOrderStatus = (ids, status) => req('PATCH', '/orders/bulk-status', { ids, status })
+export const softDeleteOrder = (id) => req('PATCH', `/orders/${id}/soft-delete`)
+export const restoreOrder = (id) => req('PATCH', `/orders/${id}/restore`)
+export const bulkSoftDeleteOrders = (ids) => req('PATCH', '/orders/bulk-soft-delete', { ids })
+export const bulkRestoreOrders = (ids) => req('PATCH', '/orders/bulk-restore', { ids })
 
 // Import & Export API functions
 export const exportProducts = (format = 'csv') => {

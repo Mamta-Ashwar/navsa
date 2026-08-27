@@ -97,6 +97,34 @@ class ImportErpProducts extends Command
 
         $vatCodeCol = $headerMap['vatcode'] ?? ($headerMap['vat_code'] ?? null);
 
+        // Workbook-local brand-code fallback. If a GroupDesc row omits the
+        // brand text but keeps the 6-character ERP brand code (for example
+        // CON11TWI101), reuse the brand text found for TWI101 elsewhere in the
+        // same workbook rather than leaving the product unmapped.
+        $brandNameByErpBrandCode = [];
+        $groupDescCol = $headerMap['groupdesc'] ?? ($headerMap['group_desc'] ?? 9);
+
+        foreach ($rows as $brandMapRow) {
+            $rawGroup = preg_replace(
+                '/\s+/u',
+                ' ',
+                trim((string) ($brandMapRow[$groupDescCol] ?? ''))
+            );
+
+            if ($rawGroup === '' || strlen($rawGroup) < 11) {
+                continue;
+            }
+
+            $erpBrandCode = strtoupper(substr($rawGroup, 5, 6));
+            $erpBrandName = strlen($rawGroup) > 11
+                ? trim(substr($rawGroup, 11))
+                : '';
+
+            if ($erpBrandCode !== '' && $erpBrandName !== '') {
+                $brandNameByErpBrandCode[$erpBrandCode] = $erpBrandName;
+            }
+        }
+
         $validVatCodes = DB::table('vat_codes')
             ->where('active', 1)
             ->pluck('code')
@@ -308,11 +336,10 @@ class ImportErpProducts extends Command
                     continue;
                 }
 
-                // "After completion of the Obsolete date" means that a product
-                // dated 2026-08-14 remains active on 2026-08-14 and becomes
-                // obsolete from 2026-08-15 onward (Europe/London business date).
-                $todayLondon = now('Europe/London')->toDateString();
-                $obsoleteExpired = $obsolete !== null && $obsolete < $todayLondon;
+                // Use the same neutral UTC lifecycle rule as Product.php and
+                // the web/admin ERP importer. The Obsolete date remains valid
+                // through that UTC date and expires on the following day.
+                $obsoleteExpired = Product::isObsoleteDateExpired($obsolete);
 
                 if (empty($description) && empty($navsaProductCode)) {
                     $skipped++;
@@ -341,9 +368,20 @@ class ImportErpProducts extends Command
                 if (!empty($groupDesc)) {
                     $cleanGroup = preg_replace('/\s+/u', ' ', trim($groupDesc));
                     $groupCode  = strtoupper(substr($cleanGroup, 0, 5));
+                    $erpBrandCode = strlen($cleanGroup) >= 11
+                        ? strtoupper(substr($cleanGroup, 5, 6))
+                        : '';
 
                     if (strlen($cleanGroup) > 11) {
                         $brandName = trim(substr($cleanGroup, 11));
+                    }
+
+                    if (
+                        $brandName === ''
+                        && $erpBrandCode !== ''
+                        && isset($brandNameByErpBrandCode[$erpBrandCode])
+                    ) {
+                        $brandName = $brandNameByErpBrandCode[$erpBrandCode];
                     }
 
                     if ($brandName === '' && preg_match('/^\S+\s+(.+)$/u', $cleanGroup, $matches)) {
@@ -425,6 +463,7 @@ class ImportErpProducts extends Command
                     'live_for_web'          => $obsoleteExpired ? 0 : $liveForWeb,
                     'encore_image'          => $encoreImage ?: null,
                     'obsolete'              => $obsolete,
+                    'last_erp_import_at'    => now(),
 
                     // An expired Obsolete date always wins over LiveForWeb.
                     // Otherwise a product present in the ERP file is restored to
@@ -647,15 +686,46 @@ class ImportErpProducts extends Command
             return $value->format('Y-m-d');
         }
 
+        // ERP standard products use 31-12-9999 as an open-ended / non-expiring
+        // sentinel. Excel stores that date as serial 2958465.
         if (is_numeric($value)) {
+            $serial = (float) $value;
+
+            if (abs($serial - 2958465.0) < 0.0001) {
+                return '9999-12-31';
+            }
+
             try {
-                return ExcelDate::excelToDateTimeObject($value)->format('Y-m-d');
-            } catch (\Exception $e) {
-                return null;
+                return ExcelDate::excelToDateTimeObject($serial)->format('Y-m-d');
+            } catch (\Throwable $e) {
+                try {
+                    $wholeDays = (int) floor($serial);
+                    $base = new \DateTimeImmutable('1899-12-30');
+                    return $base->modify('+' . $wholeDays . ' days')->format('Y-m-d');
+                } catch (\Throwable $ignored) {
+                    return null;
+                }
             }
         }
 
-        $timestamp = strtotime((string) $value);
-        return $timestamp ? date('Y-m-d', $timestamp) : null;
+        $str = trim((string) $value);
+        if ($str === '') {
+            return null;
+        }
+
+        if (preg_match('/^(?:31[-\/]12[-\/]9999|9999[-\/]12[-\/]31)$/', $str)) {
+            return '9999-12-31';
+        }
+
+        foreach (['!Y-m-d', '!Y/m/d', '!d-m-Y', '!d/m/Y'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat($format, $str);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if ($date && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        $timestamp = strtotime($str);
+        return $timestamp !== false ? date('Y-m-d', $timestamp) : null;
     }
 }

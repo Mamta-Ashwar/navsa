@@ -44,6 +44,46 @@ class ProductController extends Controller
     }
 
 
+    private function applyVatMetadata($products): void
+    {
+        $collection = collect($products);
+        $codes = $collection
+            ->pluck('vat_code')
+            ->filter()
+            ->map(fn ($code) => strtoupper(trim((string) $code)))
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($codes)) {
+            foreach ($collection as $product) {
+                $product->setAttribute('vat_rate', 0.0);
+                $product->setAttribute('vat_description', null);
+                $product->setAttribute('vat_treatment', null);
+                $product->setAttribute('vat_charge_for_uk', false);
+            }
+            return;
+        }
+
+        $vatMap = DB::table('vat_codes')
+            ->where('active', 1)
+            ->whereIn('code', $codes)
+            ->get()
+            ->keyBy(fn ($row) => strtoupper(trim((string) $row->code)));
+
+        foreach ($collection as $product) {
+            $code = strtoupper(trim((string) ($product->vat_code ?? '')));
+            $vat = $code !== '' ? $vatMap->get($code) : null;
+            $chargeForUk = $vat ? (bool) $vat->charge_for_uk : false;
+
+            $product->setAttribute('vat_rate', $vat && $chargeForUk ? (float) $vat->percentage : 0.0);
+            $product->setAttribute('vat_description', $vat->description ?? null);
+            $product->setAttribute('vat_treatment', $vat->vat_treatment ?? null);
+            $product->setAttribute('vat_charge_for_uk', $chargeForUk);
+        }
+    }
+
+
     /**
      * Public homepage-only product highlights.
      *
@@ -225,6 +265,7 @@ class ProductController extends Controller
         );
 
         $this->applyManualImageOverrides($products->getCollection());
+        $this->applyVatMetadata($products->getCollection());
 
         return response()->json($products);
     }
@@ -245,6 +286,7 @@ class ProductController extends Controller
             ->findOrFail($id);
 
         $this->applyManualImageOverrides(collect([$product]));
+        $this->applyVatMetadata(collect([$product]));
 
         return response()->json($product);
     }

@@ -8,6 +8,7 @@ import ConfirmModal from '../components/common/ConfirmModal'
 import ShippingSelector from '../components/ShippingSelector'
 import { getCountries } from '../services/shippingService'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
+import { fetchRegisteredCustomerCountry, isUnitedKingdomCountry, getProductVatRate, formatVatRate } from '../utils/vat'
 import './Basket.css'
 
 function getUnitsPerCase(item) {
@@ -34,11 +35,14 @@ function ft3(value) {
 
 function Basket() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, token } = useAuth()
   const [itemToRemove, setItemToRemove] = useState(null)
   const [showShippingEditor, setShowShippingEditor] = useState(false)
   const [resolvedCountry, setResolvedCountry] = useState(null)
   const [submittingOrder, setSubmittingOrder] = useState(false)
+  const [registeredCountry, setRegisteredCountry] = useState('')
+  const [vatProfileLoading, setVatProfileLoading] = useState(Boolean(user))
+  const [vatProfileError, setVatProfileError] = useState('')
   const { formatPrice: money } = useCurrency()
 
   const {
@@ -91,7 +95,7 @@ function Basket() {
         body: JSON.stringify({
           user_id: user.id,
           items: itemsPayload,
-          total_amount: basketTotal,
+          total_amount: basketGrandTotal,
           shipping_method: isCollection ? 'Collection (EXW)' : (selectedContainer?.container_name || 'Freight Delivery'),
           shipping_address: isCollection ? 'EXW Central Warehouse' : `${selectedCountry?.country_name || ''} - ${selectedPort?.port_name || ''}`,
         }),
@@ -113,6 +117,46 @@ function Basket() {
       setSubmittingOrder(false)
     }
   }
+
+  useEffect(() => {
+    let active = true
+
+    if (!user) {
+      setRegisteredCountry('')
+      setVatProfileLoading(false)
+      setVatProfileError('')
+      return () => { active = false }
+    }
+
+    setVatProfileLoading(true)
+    setVatProfileError('')
+
+    fetchRegisteredCustomerCountry(user, token)
+      .then(country => {
+        if (!active) return
+        if (!country) throw new Error('Registered country is missing from your trade account.')
+        setRegisteredCountry(country)
+      })
+      .catch(error => {
+        if (!active) return
+        setRegisteredCountry('')
+        setVatProfileError(error.message || 'Unable to verify your registered country for VAT.')
+      })
+      .finally(() => {
+        if (active) setVatProfileLoading(false)
+      })
+
+    return () => { active = false }
+  }, [user, token])
+
+  const isUKCustomer = isUnitedKingdomCountry(registeredCountry)
+  const basketVatTotal = isUKCustomer
+    ? basketItems.reduce((sum, item) => {
+        const net = Number(item.price || 0) * Number(item.totalCases || 0)
+        return sum + (net * getProductVatRate(item) / 100)
+      }, 0)
+    : 0
+  const basketGrandTotal = basketTotal + basketVatTotal
 
   const { shipping, hasShipping, isCollection } = useShipping()
 
@@ -171,7 +215,10 @@ function Basket() {
     !dryNeedsReefer &&
     !frozenMixed &&
     !overWeight &&
-    !overVolume
+    !overVolume &&
+    Boolean(user) &&
+    !vatProfileLoading &&
+    !vatProfileError
 
   useEffect(() => {
     let active = true
@@ -304,7 +351,7 @@ function Basket() {
             <div>Qty (Cases)</div>
             <div>Line Weight (kg)</div>
             <div>Line Volume (m³)</div>
-            <div>Subtotal</div>
+            <div>{isUKCustomer ? 'Line Total' : 'Subtotal'}</div>
             <div></div>
           </div>
 
@@ -331,6 +378,9 @@ function Basket() {
               Number(item.totalCases || 0)
 
             const subtotal = Number(item.price || 0) * Number(item.totalCases || 0)
+            const vatRate = isUKCustomer ? getProductVatRate(item) : 0
+            const lineVat = isUKCustomer ? subtotal * vatRate / 100 : 0
+            const lineTotal = subtotal + lineVat
 
             return (
               <div className="basket-row" key={item.id}>
@@ -422,7 +472,14 @@ function Basket() {
                 <div className="basket-case-cell">{item.totalCases}</div>
                 <div>{lineWeight.toFixed(2)}</div>
                 <div>{lineVolume.toFixed(2)}</div>
-                <div>{money(subtotal)}</div>
+                <div>
+                  <strong>{money(isUKCustomer ? lineTotal : subtotal)}</strong>
+                  {isUKCustomer && (
+                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
+                      Net {money(subtotal)} + VAT {formatVatRate(vatRate)}% ({money(lineVat)})
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"
@@ -443,9 +500,25 @@ function Basket() {
             <div></div>
             <div>Total Weight (kg): <strong>{basketWeight.toFixed(2)}</strong></div>
             <div>Total Volume (m³): <strong>{basketVolume.toFixed(2)}</strong></div>
-            <div>Total (inc VAT): <strong>{money(basketTotal)}</strong></div>
+            <div>
+              {isUKCustomer ? (
+                <>
+                  <div>Net: <strong>{money(basketTotal)}</strong></div>
+                  <div style={{ marginTop: '3px' }}>VAT: <strong>{money(basketVatTotal)}</strong></div>
+                  <div style={{ marginTop: '3px' }}>Total: <strong>{money(basketGrandTotal)}</strong></div>
+                </>
+              ) : (
+                <>Total: <strong>{money(basketTotal)}</strong></>
+              )}
+            </div>
           </div>
         </div>
+
+        {vatProfileError && (
+          <div style={{ margin: '18px 0', padding: '12px 16px', borderRadius: '10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', color: '#b91c1c', fontWeight: 600 }}>
+            {vatProfileError} Checkout is paused until your registered country can be verified.
+          </div>
+        )}
 
         <div className="basket-bottom">
           <div></div>

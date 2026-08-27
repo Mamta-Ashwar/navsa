@@ -20,6 +20,10 @@ class OrderItem extends Model
         'case_quantity',
         'units_per_case',
         'subtotal',
+        'vat_code',
+        'vat_rate',
+        'vat_amount',
+        'line_total',
     ];
 
     public function order()

@@ -10,18 +10,21 @@ import {
   Info,
   Sparkles,
   RefreshCw,
-  FileCheck,
   CheckSquare,
   Square,
   Sliders,
   Plus,
-  Layers
+  Layers,
+  Images,
+  FolderOpen,
+  ImagePlus,
+  X
 } from 'lucide-react';
 import * as XLSXModule from 'xlsx';
 import {
-  importProductsJSON,
-  importFullRestoreFile,
   uploadErpExcel,
+  uploadBulkProductImages,
+  auditBulkProductImages,
   getProducts
 } from '../../services/adminApi';
 import './AdminImportExport.css';
@@ -31,9 +34,37 @@ const getXLSX = () => {
   return XLSXModule;
 };
 
+const slugifyFolderName = (value = '') => String(value)
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const escapeCsv = (value) => {
+  const text = value == null ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+const downloadCsv = (filename, headers, rows) => {
+  const csv = [
+    headers.map(escapeCsv).join(','),
+    ...rows.map((row) => row.map(escapeCsv).join(',')),
+  ].join('\r\n');
+
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
 // Exact 34 ERP Columns as per Datafeed from ERP system.xlsx
 const ERP_34_COLUMNS = [
-  'NAVSA PRODUCT CODE',
+  'PrimarySupplierIndex',
   'Reference',
   'Description',
   'UnitsOf',
@@ -79,6 +110,15 @@ export default function AdminImportExport() {
   const [parsedRowsCount, setParsedRowsCount] = useState(null);
   const [resultMsg, setResultMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [importReport, setImportReport] = useState(null);
+
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [imageFolderName, setImageFolderName] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState({ done: 0, total: 0 });
+  const [imageUploadResult, setImageUploadResult] = useState(null);
+  const [imageAudit, setImageAudit] = useState(null);
+  const [imageUploadError, setImageUploadError] = useState(null);
 
   const resetState = () => {
     setSelectedFile(null);
@@ -87,12 +127,30 @@ export default function AdminImportExport() {
     setErrorMsg(null);
   };
 
+  // Clicking either import mode should feel like an import action immediately:
+  // switch mode and open the native file browser in the same click.
+  const chooseImportFile = (mode) => {
+    setImportMode(mode);
+    setSelectedFile(null);
+    setParsedRowsCount(null);
+    setResultMsg(null);
+    setErrorMsg(null);
+    setImportReport(null);
+
+    const fileInput = document.getElementById('import-file-input');
+    if (fileInput) {
+      fileInput.value = '';
+      fileInput.click();
+    }
+  };
+
   const handleFileChange = async (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
       setResultMsg(null);
       setErrorMsg(null);
+      setImportReport(null);
 
       const ext = file.name.split('.').pop().toLowerCase();
       if (['xlsx', 'xls', 'csv'].includes(ext)) {
@@ -122,9 +180,34 @@ export default function AdminImportExport() {
   };
 
   const selectAllColumns = () => setSelectedColumns([...ERP_34_COLUMNS]);
-  const deselectAllColumns = () => setSelectedColumns(['NAVSA PRODUCT CODE', 'Description']);
+  const deselectAllColumns = () => setSelectedColumns(['Reference', 'Description']);
 
-  // Download ERP Excel Backup (.xlsx) with 3 Download Modes
+  const fetchAllProductsForExport = async () => {
+    const allProducts = [];
+    let page = 1;
+    let lastPage = 1;
+
+    do {
+      const response = await getProducts({
+        page,
+        per_page: 1000,
+        sort_by: 'id',
+        order: 'asc',
+      });
+
+      const pageRows = Array.isArray(response)
+        ? response
+        : (Array.isArray(response?.data) ? response.data : []);
+
+      allProducts.push(...pageRows);
+      lastPage = Number(response?.last_page || 1);
+      page += 1;
+    } while (page <= lastPage);
+
+    return allProducts;
+  };
+
+  // Export Website Data (.xlsx) with 3 Download Modes
   const handleFullExportExcel = async () => {
     if (exportMode === 'selective' && selectedColumns.length === 0) {
       setErrorMsg('Please select at least 1 column for Selective export mode.');
@@ -138,8 +221,7 @@ export default function AdminImportExport() {
     const XLSX = getXLSX();
 
     try {
-      const products = await getProducts();
-      const rawProducts = Array.isArray(products) ? products : products.data || [];
+      const rawProducts = await fetchAllProductsForExport();
 
       // Determine active headers based on export mode
       let activeHeaders = [...ERP_34_COLUMNS];
@@ -152,38 +234,38 @@ export default function AdminImportExport() {
       // Map product objects to selected columns
       const formattedProducts = rawProducts.map((p) => {
         const fullRow = {
-          'NAVSA PRODUCT CODE': p.primary_supplier_index || p.navsa_product_code || p.supplier_index || '',
+          'PrimarySupplierIndex': p.primary_supplier_index || '',
           'Reference': p.navsa_product_code || p.reference || p.code || '',
           'Description': p.description || '',
-          'UnitsOf': p.unit_size || p.units_of || '',
-          'InnerCaseQuantity': p.inner_case_quantity || p.case_quantity || 1,
-          'OuterCaseQuantity': p.outer_case_quantity || p.case_quantity || 1,
-          'QtyDesc': p.qty_desc || 'Case',
+          'UnitsOf': p.units_of ?? p.unit_size ?? '',
+          'InnerCaseQuantity': p.inner_case_quantity ?? p.case_quantity ?? '',
+          'OuterCaseQuantity': p.outer_case_quantity ?? p.case_quantity ?? '',
+          'QtyDesc': p.qty_desc || '',
           'BarcodeEAN': p.barcode_ean || p.ean || '',
           'BarcodeCase': p.barcode_case || '',
-          'GroupDesc': p.group_desc || (p.brand ? p.brand.brand_name : ''),
-          'VatCode': p.vat_code || 'Z',
-          'LayerQuantity': p.layer_quantity || '',
-          'PalletQuantity': p.pallet_quantity || '',
-          'PrimarySupplierReference': p.primary_supplier_reference || '',
-          'Cost': p.cost || 0,
+          'GroupDesc': p.group_desc || '',
+          'VatCode': p.vat_code || '',
+          'LayerQuantity': p.layer_quantity ?? '',
+          'PalletQuantity': p.pallet_quantity ?? '',
+          'PrimarySupplierReference': p.supplier_reference || p.primary_supplier_reference || '',
+          'Cost': p.cost ?? '',
           'CostFromDate': p.cost_from_date || '',
           'CostToDate': p.cost_to_date || '',
-          'Weight': p.weight || '',
-          'Volume': p.volume || '',
-          'ShelfLife': p.shelf_life || '',
+          'Weight': p.weight ?? '',
+          'Volume': p.volume ?? '',
+          'ShelfLife': p.shelf_life ?? '',
           'BBD': p.bbd || '',
-          'PriceList': p.price_list || 'STD',
-          'Price': p.price_per_case || p.price || p.price_per_unit || 0,
+          'PriceList': p.price_list || '',
+          'Price': p.price ?? p.price_per_case ?? p.price_per_unit ?? '',
           'FromDate': p.from_date || '',
           'ToDate': p.to_date || '',
           'CommCode': p.comm_code || '',
-          'IntraCountry': p.intra_country || 'United Kingdom',
-          'IntraType': p.intra_type || 'G',
-          'WebShortDescription': p.web_short_description || p.description || '',
-          'WebLongDescription': p.web_long_description || p.description || '',
-          'WebImage': p.web_image || p.image || '',
-          'LiveForWeb': p.live_for_web !== undefined ? p.live_for_web : (p.status ? 1 : 0),
+          'IntraCountry': p.intra_country || '',
+          'IntraType': p.intra_type || '',
+          'WebShortDescription': p.web_short_description || '',
+          'WebLongDescription': p.web_long_description || '',
+          'WebImage': p.erp_web_image || p.web_image || '',
+          'LiveForWeb': p.live_for_web ? 1 : 0,
           'EncoreImage': p.encore_image || '',
           'Obsolete': p.obsolete || ''
         };
@@ -232,7 +314,7 @@ export default function AdminImportExport() {
     const wb = XLSX.utils.book_new();
 
     const sampleRow1 = {
-      'NAVSA PRODUCT CODE': 'EFL100',
+      'PrimarySupplierIndex': 'MCI101',
       'Reference': '467357',
       'Description': "Young's Cooked & Peeled Prawns £4.50",
       'UnitsOf': 12,
@@ -269,7 +351,7 @@ export default function AdminImportExport() {
     };
 
     if (exportMode === 'standard_order_qty') {
-      sampleRow1['OrderQtyAllowed'] = 100;
+      sampleRow1['OrderQtyAllowed'] = 'DEFAULT';
     }
 
     const headers = exportMode === 'standard_order_qty' ? [...ERP_34_COLUMNS, 'OrderQtyAllowed'] : ERP_34_COLUMNS;
@@ -279,9 +361,13 @@ export default function AdminImportExport() {
     XLSX.writeFile(wb, 'navsa_erp_template.xlsx');
   };
 
-  // Import / Restore ERP Excel (.xlsx) - Supports both Bulk ERP and Step 1 Converted modes!
+  // Import / Restore ERP Excel (.xlsx) - Supports both Bulk ERP and Step 1 Converted modes.
+  // Important: there is intentionally NO browser-side fallback importer. The Laravel
+  // ERP importer is the single source of truth for field mapping, category/brand
+  // resolution, VAT validation, Obsolete lifecycle and database writes.
   const handleFullRestoreSubmit = async (e) => {
     e.preventDefault();
+
     if (!selectedFile) {
       setErrorMsg('Please select an ERP Excel file (.xlsx, .xls, .csv) to import.');
       return;
@@ -290,91 +376,321 @@ export default function AdminImportExport() {
     setUploading(true);
     setResultMsg(null);
     setErrorMsg(null);
+    setImportReport(null);
 
     try {
-      let res;
-      // Send directly via FormData to uploadErpExcel backend handler
       const formData = new FormData();
       formData.append('file', selectedFile);
-      formData.append('mode', importMode); // 'erp' or 'step1'
+      formData.append('mode', importMode);
 
-      res = await uploadErpExcel(formData);
+      const res = await uploadErpExcel(formData);
+      setImportReport(res);
 
-      if (!res || res.error) {
-        // Fallback to browser parsing if needed
-        const XLSX = getXLSX();
-        const buffer = await selectedFile.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName]);
+      const modeLabel = importMode === 'step1'
+        ? 'Step 1 Converted Import'
+        : 'Bulk ERP Import';
 
-        if (rows.length === 0) {
-          throw new Error('The uploaded Excel file contains no data rows.');
-        }
+      const summary = [
+        `${res?.created || 0} Created`,
+        `${res?.updated || 0} Updated`,
+        `${res?.skipped || 0} Skipped`,
+        `${res?.errors || 0} Errors`,
+        `${res?.total || 0} Total`,
+      ].join(' • ');
 
-        const mappedProducts = rows.map((r) => ({
-          primary_supplier_index: r['NAVSA PRODUCT CODE'] || r['PrimarySupplierIndex'] || r['primary_supplier_index'] || '',
-          navsa_product_code: r['NAVSA PRODUCT CODE'] || r['Reference'] || r['reference'] || r['NAVSA Product Code'] || r['Product Code'] || r[Object.keys(r)[0]],
-          description: r['Description'] || r['description'] || r['WebShortDescription'] || r[Object.keys(r)[2]],
-          unit_size: r['UnitsOf'] || r['unit_size'] || '',
-          inner_case_quantity: r['InnerCaseQuantity'] || 1,
-          outer_case_quantity: r['OuterCaseQuantity'] || 1,
-          case_quantity: r['OuterCaseQuantity'] || r['InnerCaseQuantity'] || r['UnitsOf'] || 1,
-          qty_desc: r['QtyDesc'] || 'Case',
-          barcode_ean: r['BarcodeEAN'] || '',
-          barcode_case: r['BarcodeCase'] || '',
-          group_desc: r['GroupDesc'] || '',
-          brand_name: r['GroupDesc'] ? String(r['GroupDesc']).trim() : '',
-          vat_code: r['VatCode'] || 'Z',
-          layer_quantity: r['LayerQuantity'] || null,
-          pallet_quantity: r['PalletQuantity'] || null,
-          primary_supplier_reference: r['PrimarySupplierReference'] || null,
-          cost: r['Cost'] || 0,
-          cost_from_date: r['CostFromDate'] || null,
-          cost_to_date: r['CostToDate'] || null,
-          weight: r['Weight'] || null,
-          volume: r['Volume'] || null,
-          shelf_life: r['ShelfLife'] || null,
-          bbd: r['BBD'] || null,
-          price_list: r['PriceList'] || 'STD',
-          price_per_case: r['Price'] || r['price_per_case'] || 0,
-          price_per_unit: r['Price'] || r['price_per_unit'] || 0,
-          from_date: r['FromDate'] || null,
-          to_date: r['ToDate'] || null,
-          comm_code: r['CommCode'] || null,
-          intra_country: r['IntraCountry'] || 'United Kingdom',
-          intra_type: r['IntraType'] || 'G',
-          web_short_description: r['WebShortDescription'] || r['Description'] || '',
-          web_long_description: r['WebLongDescription'] || r['Description'] || '',
-          web_image: r['WebImage'] || '',
-          live_for_web: r['LiveForWeb'] !== undefined ? (r['LiveForWeb'] == 1 || r['LiveForWeb'] === '1' || r['LiveForWeb'] === 'Active' ? 1 : 0) : 1,
-          status: r['LiveForWeb'] !== undefined ? (r['LiveForWeb'] == 1 || r['LiveForWeb'] === '1' || r['LiveForWeb'] === 'Active' ? 1 : 0) : 1,
-          encore_image: r['EncoreImage'] || '',
-          obsolete: r['Obsolete'] || null,
-          order_qty_allowed: r['OrderQtyAllowed'] || r['ORDER QTY ALLOWED'] || r['order_qty_allowed'] || r['MaxOrderQty'] || null
-        }));
-
-        res = await importProductsJSON(mappedProducts);
+      if ((res?.errors || 0) > 0) {
+        setErrorMsg(`${res?.message || `${modeLabel} completed with errors.`} ${summary}`);
+      } else {
+        setResultMsg(`${res?.message || `${modeLabel} completed successfully.`} ${summary}`);
       }
 
-      if (res) {
-        const modeLabel = importMode === 'step1' ? 'Step 1 Converted Import' : 'Bulk ERP Import';
-        let details = res.message || `${modeLabel} completed successfully.`;
-        if (res.created !== undefined || res.updated !== undefined) {
-          details += ` (${res.created || 0} Created, ${res.updated || 0} Updated, Total ${res.total || 0})`;
-        }
-        setResultMsg(details);
-        setSelectedFile(null);
-        setParsedRowsCount(null);
-        const fileInput = document.getElementById('import-file-input');
-        if (fileInput) fileInput.value = '';
-      }
+      setSelectedFile(null);
+      setParsedRowsCount(null);
+
+      const fileInput = document.getElementById('import-file-input');
+      if (fileInput) fileInput.value = '';
     } catch (err) {
       console.error('Import error:', err);
-      setErrorMsg(err.message || 'Failed to process ERP Excel file.');
+
+      const report = err?.data && typeof err.data === 'object'
+        ? err.data
+        : null;
+
+      if (report) {
+        setImportReport(report);
+      }
+
+      setErrorMsg(
+        report?.message
+        || report?.error
+        || err.message
+        || 'Failed to process ERP Excel file.'
+      );
     } finally {
       setUploading(false);
     }
+  };
+
+  const addSelectedImages = (fileList) => {
+    const incoming = Array.from(fileList || []);
+
+    if (incoming.length > 0 && !imageFolderName.trim()) {
+      const relativePath = String(incoming[0]?.webkitRelativePath || '');
+      const selectedFolder = relativePath.includes('/') ? relativePath.split('/')[0] : '';
+      if (selectedFolder) {
+        setImageFolderName(selectedFolder);
+      }
+    }
+
+    const supportedExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+    const accepted = [];
+    const rejected = [];
+
+    incoming.forEach((file) => {
+      const extension = String(file.name || '').split('.').pop().toLowerCase();
+      if (!supportedExtensions.has(extension)) {
+        rejected.push(`${file.name}: unsupported image type`);
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        rejected.push(`${file.name}: larger than 10 MB`);
+        return;
+      }
+
+      accepted.push(file);
+    });
+
+    setSelectedImages((current) => {
+      const seen = new Set(
+        current.map((file) => `${file.name}|${file.size}|${file.lastModified}`)
+      );
+
+      const merged = [...current];
+      accepted.forEach((file) => {
+        const key = `${file.name}|${file.size}|${file.lastModified}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(file);
+        }
+      });
+      return merged;
+    });
+
+    setImageUploadResult(null);
+    setImageAudit(null);
+    setImageUploadProgress({ done: 0, total: 0 });
+
+    if (rejected.length > 0) {
+      const preview = rejected.slice(0, 5).join(' • ');
+      const extra = rejected.length > 5 ? ` • +${rejected.length - 5} more` : '';
+      setImageUploadError(`${rejected.length} file(s) were not selected. ${preview}${extra}`);
+    } else {
+      setImageUploadError(null);
+    }
+  };
+
+  const handleImageInputChange = (e) => {
+    addSelectedImages(e.target.files);
+    e.target.value = '';
+  };
+
+  const handleImageDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addSelectedImages(e.dataTransfer.files);
+  };
+
+  const clearSelectedImages = () => {
+    setSelectedImages([]);
+    setImageUploadResult(null);
+    setImageAudit(null);
+    setImageUploadError(null);
+    setImageUploadProgress({ done: 0, total: 0 });
+  };
+
+  const handleBulkImageUpload = async () => {
+    if (!imageFolderName.trim()) {
+      setImageUploadError('Please enter a supplier image folder name, for example mars.');
+      return;
+    }
+
+    const folderSlug = slugifyFolderName(imageFolderName);
+    if (!folderSlug) {
+      setImageUploadError('Please enter a valid supplier image folder name.');
+      return;
+    }
+
+    if (selectedImages.length === 0) {
+      setImageUploadError('Please choose a product image folder or select image files first.');
+      return;
+    }
+
+    const BATCH_SIZE = 5;
+    const numericKeys = [
+      'received',
+      'uploaded_files',
+      'replaced_files',
+      'matched_files',
+      'matched_products',
+      'primary_links_set',
+      'unmatched_file_count',
+      'failed_file_count',
+    ];
+
+    const aggregate = {
+      folder_name: imageFolderName.trim(),
+      folder_slug: folderSlug,
+      public_folder: `/products/${folderSlug}/`,
+      received: 0,
+      uploaded_files: 0,
+      replaced_files: 0,
+      matched_files: 0,
+      matched_products: 0,
+      primary_links_set: 0,
+      unmatched_file_count: 0,
+      failed_file_count: 0,
+      unmatched_files: [],
+      failed_files: [],
+      matched_supplier_indexes: [],
+    };
+
+    const supplierIndexSet = new Set();
+
+    setImageUploading(true);
+    setImageUploadError(null);
+    setImageUploadResult(null);
+    setImageAudit(null);
+    setImageUploadProgress({ done: 0, total: selectedImages.length });
+
+    try {
+      for (let startIndex = 0; startIndex < selectedImages.length; startIndex += BATCH_SIZE) {
+        const batch = selectedImages.slice(startIndex, startIndex + BATCH_SIZE);
+        const formData = new FormData();
+        formData.append('folder_name', imageFolderName.trim());
+
+        batch.forEach((file) => {
+          formData.append('images[]', file, file.name);
+        });
+
+        try {
+          const res = await uploadBulkProductImages(formData);
+
+          numericKeys.forEach((key) => {
+            aggregate[key] += Number(res?.[key] || 0);
+          });
+
+          if (Array.isArray(res?.unmatched_files)) {
+            aggregate.unmatched_files.push(...res.unmatched_files);
+          }
+
+          if (Array.isArray(res?.failed_files)) {
+            aggregate.failed_files.push(...res.failed_files);
+          }
+
+          if (Array.isArray(res?.matched_supplier_indexes)) {
+            res.matched_supplier_indexes.forEach((value) => {
+              const clean = String(value || '').trim();
+              if (clean) supplierIndexSet.add(clean);
+            });
+          }
+
+          if (res?.folder_slug) {
+            aggregate.folder_slug = res.folder_slug;
+            aggregate.public_folder = res.public_folder || `/products/${res.folder_slug}/`;
+          }
+        } catch (err) {
+          const message = err?.data?.message || err?.message || 'Batch upload failed.';
+          aggregate.failed_file_count += batch.length;
+          batch.forEach((file) => {
+            aggregate.failed_files.push({
+              file: file.name,
+              message,
+            });
+          });
+        }
+
+        setImageUploadProgress({
+          done: Math.min(startIndex + batch.length, selectedImages.length),
+          total: selectedImages.length,
+        });
+      }
+
+      aggregate.matched_supplier_indexes = Array.from(supplierIndexSet).sort();
+      setImageUploadResult(aggregate);
+
+      // Prefer the supplier indexes from the Excel import performed in this
+      // session. If the page was reloaded, the backend can infer the supplier
+      // scope from products already linked to this supplier image folder.
+      const importedSupplierIndexes = Array.isArray(importReport?.supplier_indexes)
+        ? importReport.supplier_indexes.map((value) => String(value || '').trim()).filter(Boolean)
+        : [];
+      const matchedSupplierIndexes = aggregate.matched_supplier_indexes || [];
+      const importMatchesCurrentUpload = importedSupplierIndexes.some((value) => (
+        matchedSupplierIndexes.includes(value)
+      ));
+
+      const auditSupplierIndexes = matchedSupplierIndexes.length === 0
+        ? importedSupplierIndexes
+        : (importMatchesCurrentUpload
+          ? Array.from(new Set([...matchedSupplierIndexes, ...importedSupplierIndexes]))
+          : matchedSupplierIndexes);
+
+      try {
+        const audit = await auditBulkProductImages(
+          imageFolderName.trim(),
+          auditSupplierIndexes
+        );
+        setImageAudit(audit);
+      } catch (auditError) {
+        const auditMessage = auditError?.data?.message || auditError?.message;
+        setImageUploadError((current) => (
+          current || `Images uploaded, but the missing-image audit could not run: ${auditMessage || 'unknown error'}`
+        ));
+      }
+
+      if (aggregate.failed_file_count > 0) {
+        setImageUploadError(
+          `Upload finished with ${aggregate.failed_file_count} failed file(s). `
+          + `${aggregate.uploaded_files} file(s) were uploaded successfully.`
+        );
+      } else {
+        setImageUploadError(null);
+        setSelectedImages([]);
+      }
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const downloadMissingImageList = () => {
+    const rows = Array.isArray(imageAudit?.missing_products) ? imageAudit.missing_products : [];
+    if (rows.length === 0) return;
+
+    downloadCsv(
+      `${imageAudit?.folder_slug || slugifyFolderName(imageFolderName) || 'supplier'}-missing-product-images.csv`,
+      ['Supplier Index', 'NAVSA Product Code', 'Product Description', 'Expected WebImage', 'Target Folder'],
+      rows.map((item) => [
+        item.supplier_index || '',
+        item.navsa_product_code || '',
+        item.description || '',
+        item.web_image || '',
+        imageAudit?.public_folder || '',
+      ])
+    );
+  };
+
+  const downloadUnmatchedUploadList = () => {
+    const files = Array.isArray(imageUploadResult?.unmatched_files)
+      ? Array.from(new Set(imageUploadResult.unmatched_files))
+      : [];
+    if (files.length === 0) return;
+
+    downloadCsv(
+      `${imageUploadResult?.folder_slug || slugifyFolderName(imageFolderName) || 'supplier'}-unmatched-uploaded-images.csv`,
+      ['Uploaded Filename', 'Reason'],
+      files.map((filename) => [filename, 'No current product has an exact matching ERP WebImage filename'])
+    );
   };
 
   return (
@@ -388,7 +704,7 @@ export default function AdminImportExport() {
           <div>
             <h2>NAVSA ERP System Excel Import & Export</h2>
             <p>
-              Export and import product catalogue data matching your <code>Datafeed from ERP system.xlsx</code> structure with custom export modes and column selection.
+              Export and import the NAVSA ERP catalogue, then upload supplier product images in bulk using the exact WebImage filenames from the ERP Excel file.
             </p>
           </div>
         </div>
@@ -417,14 +733,86 @@ export default function AdminImportExport() {
         </div>
       )}
 
+      {importReport && (
+        <div className={`ie-import-report ${(importReport.errors || 0) > 0 ? 'has-errors' : 'is-success'}`}>
+          <div className="ie-import-report-head">
+            <div>
+              <strong>Last import result</strong>
+              <span>{importReport.message || 'ERP import finished.'}</span>
+            </div>
+            <span className="ie-report-status">
+              {(importReport.errors || 0) > 0 ? 'Needs attention' : 'Completed'}
+            </span>
+          </div>
+
+          <div className="ie-report-metrics">
+            <div><span>Total processed</span><strong>{importReport.total ?? 0}</strong></div>
+            <div><span>Imported</span><strong>{importReport.imported ?? 0}</strong></div>
+            <div><span>New created</span><strong>{importReport.created ?? 0}</strong></div>
+            <div><span>Existing updated</span><strong>{importReport.updated ?? 0}</strong></div>
+            <div><span>Restored</span><strong>{importReport.restored ?? 0}</strong></div>
+            <div><span>Errors</span><strong>{importReport.errors ?? 0}</strong></div>
+          </div>
+
+          {Array.isArray(importReport.row_errors) && importReport.row_errors.length > 0 && (
+            <div className="ie-report-details">
+              <strong>Row errors</strong>
+              <div className="ie-report-list">
+                {importReport.row_errors.slice(0, 10).map((item, index) => (
+                  <div key={`${item.row}-${item.code || ''}-${index}`}>
+                    <span>Row {item.row}{item.code ? ` • ${item.code}` : ''}</span>
+                    <p>{item.message}</p>
+                  </div>
+                ))}
+              </div>
+              {importReport.row_errors.length > 10 && (
+                <small>Showing first 10 of {importReport.row_errors.length} returned row errors.</small>
+              )}
+            </div>
+          )}
+
+          {(
+            Object.keys(importReport.unknown_supplier_indexes || {}).length > 0
+            || Object.keys(importReport.unknown_group_codes || {}).length > 0
+            || Object.keys(importReport.unknown_brands || {}).length > 0
+          ) && (
+            <div className="ie-mapping-warnings">
+              <strong>Mapping warnings (products are still imported)</strong>
+
+              {Object.keys(importReport.unknown_supplier_indexes || {}).length > 0 && (
+                <p>
+                  <span>Supplier indexes not found in Suppliers:</span>{' '}
+                  {Object.entries(importReport.unknown_supplier_indexes).map(([key, count]) => `${key} (${count})`).join(', ')}
+                </p>
+              )}
+
+              {Object.keys(importReport.unknown_group_codes || {}).length > 0 && (
+                <p>
+                  <span>Group codes not mapped:</span>{' '}
+                  {Object.entries(importReport.unknown_group_codes).map(([key, count]) => `${key} (${count})`).join(', ')}
+                </p>
+              )}
+
+              {Object.keys(importReport.unknown_brands || {}).length > 0 && (
+                <p>
+                  <span>Brand names not matched:</span>{' '}
+                  {Object.entries(importReport.unknown_brands).slice(0, 20).map(([key, count]) => `${key} (${count})`).join(', ')}
+                  {Object.keys(importReport.unknown_brands).length > 20 ? ' …' : ''}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Grid: Export Options vs Import Dropzone */}
       <div className="ie-sections-grid">
-        {/* Card 1: Download ERP Excel Backup with 3 Modes */}
+        {/* Card 1: Export Website Data with 3 Modes */}
         <div className="ie-box ie-export-box">
           <div className="ie-box-header">
             <Download size={22} className="ie-box-icon export" />
             <div>
-              <h3>Download ERP Excel Backup (.xlsx)</h3>
+              <h3>Export Website Data (.xlsx)</h3>
               <p>Select your desired download format mode below:</p>
             </div>
           </div>
@@ -507,7 +895,7 @@ export default function AdminImportExport() {
             >
               {exporting ? (
                 <>
-                  <Loader2 size={18} className="ie-spinner" /> Generating Excel Backup...
+                  <Loader2 size={18} className="ie-spinner" /> Generating Website Export...
                 </>
               ) : (
                 <>
@@ -533,7 +921,7 @@ export default function AdminImportExport() {
             <Upload size={22} className="ie-box-icon import" />
             <div>
               <h3>Upload & Import ERP Excel File</h3>
-              <p>Choose your import type below and upload your Excel file to sync catalog items.</p>
+              <p>Click an import type to browse for the Excel file immediately, or drag a file into the upload area below.</p>
             </div>
           </div>
 
@@ -542,7 +930,7 @@ export default function AdminImportExport() {
             <button
               type="button"
               className={`ie-import-tab-btn erp ${importMode === 'erp' ? 'active' : ''}`}
-              onClick={() => setImportMode('erp')}
+              onClick={() => chooseImportFile('erp')}
             >
               <Upload size={16} /> Bulk ERP Import (.xlsx)
             </button>
@@ -550,7 +938,7 @@ export default function AdminImportExport() {
             <button
               type="button"
               className={`ie-import-tab-btn step1 ${importMode === 'step1' ? 'active' : ''}`}
-              onClick={() => setImportMode('step1')}
+              onClick={() => chooseImportFile('step1')}
             >
               <Layers size={16} /> Step 1 Converted Import (.xlsx)
             </button>
@@ -626,33 +1014,257 @@ export default function AdminImportExport() {
         </div>
       </div>
 
-      {/* Column Reference Table */}
-      <div className="ie-box" style={{ marginTop: '10px' }}>
-        <div className="ie-box-header">
-          <FileCheck size={20} className="ie-accent-icon" />
+      {/* Bulk supplier / ERP product images */}
+      <div className="ie-box ie-bulk-images-box">
+        <div className="ie-box-header ie-image-box-header">
+          <Images size={24} className="ie-box-icon images" />
           <div>
-            <h3>34 ERP Column Schema Reference</h3>
-            <p>List of all 34 supported columns matching your ERP System format:</p>
+            <h3>Bulk Product Image Upload</h3>
+            <p>
+              Upload supplier images whose filenames exactly match the product <code>WebImage</code> values imported from ERP, for example <code>5000159470315.png</code>. You can choose an entire folder or multiple files.
+            </p>
           </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-          {ERP_34_COLUMNS.map((col, idx) => (
-            <span
-              key={col}
-              style={{
-                fontSize: '12px',
-                fontFamily: 'monospace',
-                padding: '4px 10px',
-                background: 'rgba(59, 130, 246, 0.12)',
-                border: '1px solid rgba(59, 130, 246, 0.25)',
-                color: '#60a5fa',
-                borderRadius: '6px'
-              }}
-            >
-              {idx + 1}. {col}
-            </span>
-          ))}
+
+        <div className="ie-image-guidance">
+          <Info size={17} />
+          <span>
+            Recommended order: <strong>1. Import the ERP Excel</strong>, then <strong>2. Upload the image folder</strong>.
+            Every valid selected image is <strong>saved into the supplier folder first</strong>. Matching then runs <strong>only by WebImage</strong>: the complete uploaded filename, including extension, must exactly match the product <code>WebImage</code> value imported from Excel. Files with no match are still kept in the supplier folder and are reported in a downloadable unmatched list. One image can match multiple products when they share the same WebImage filename. BarcodeEAN, EncoreImage, Reference and description are not used as fallbacks.
+          </span>
         </div>
+
+        <div className="ie-supplier-folder-card">
+          <label htmlFor="supplier-image-folder-name">Supplier image folder name *</label>
+          <div className="ie-supplier-folder-input-row">
+            <FolderOpen size={18} />
+            <input
+              id="supplier-image-folder-name"
+              type="text"
+              value={imageFolderName}
+              onChange={(e) => {
+                setImageFolderName(e.target.value);
+                setImageUploadResult(null);
+                setImageAudit(null);
+                setImageUploadError(null);
+              }}
+              placeholder="e.g. mars"
+              maxLength={80}
+              disabled={imageUploading}
+            />
+          </div>
+          <small>
+            Images will be saved under <code>/products/{slugifyFolderName(imageFolderName) || 'supplier-folder'}/</code>.
+            If you choose a whole folder first, its folder name is suggested automatically and you can still change it before upload.
+          </small>
+        </div>
+
+        <div
+          className={`ie-image-dropzone ${selectedImages.length > 0 ? 'has-files' : ''}`}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleImageDrop}
+        >
+          <input
+            id="bulk-image-folder-input"
+            className="ie-hidden-file-input"
+            type="file"
+            accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            webkitdirectory=""
+            directory=""
+            onChange={handleImageInputChange}
+          />
+
+          <input
+            id="bulk-image-files-input"
+            className="ie-hidden-file-input"
+            type="file"
+            accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            onChange={handleImageInputChange}
+          />
+
+          <ImagePlus size={34} className="ie-image-drop-icon" />
+          <strong>Drop supplier product images here</strong>
+          <span>PNG, JPG, GIF or WEBP • maximum 10 MB per image</span>
+
+          <div className="ie-image-picker-actions">
+            <label htmlFor="bulk-image-folder-input" className="ie-image-picker-btn">
+              <FolderOpen size={17} />
+              Select Image Folder
+            </label>
+            <label htmlFor="bulk-image-files-input" className="ie-image-picker-btn secondary">
+              <Images size={17} />
+              Select Multiple Images
+            </label>
+          </div>
+        </div>
+
+        {selectedImages.length > 0 && (
+          <div className="ie-selected-images-panel">
+            <div className="ie-selected-images-head">
+              <div>
+                <strong>{selectedImages.length} image file(s) selected</strong>
+                <span>
+                  {(selectedImages.reduce((total, file) => total + file.size, 0) / (1024 * 1024)).toFixed(1)} MB total
+                </span>
+              </div>
+              <button
+                type="button"
+                className="ie-clear-images-btn"
+                onClick={clearSelectedImages}
+                disabled={imageUploading}
+              >
+                <X size={15} /> Clear
+              </button>
+            </div>
+
+            <div className="ie-image-file-preview">
+              {selectedImages.slice(0, 8).map((file) => (
+                <span key={`${file.name}-${file.size}-${file.lastModified}`}>{file.name}</span>
+              ))}
+              {selectedImages.length > 8 && (
+                <span className="more">+{selectedImages.length - 8} more</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {imageUploadError && (
+          <div className="ie-inline-image-message error">
+            <AlertCircle size={17} />
+            <span>{imageUploadError}</span>
+          </div>
+        )}
+
+        {imageUploading && imageUploadProgress.total > 0 && (
+          <div className="ie-image-progress">
+            <div className="ie-image-progress-head">
+              <span>Uploading product images in safe batches…</span>
+              <strong>{imageUploadProgress.done} / {imageUploadProgress.total}</strong>
+            </div>
+            <div className="ie-image-progress-track">
+              <div
+                className="ie-image-progress-value"
+                style={{
+                  width: `${Math.round((imageUploadProgress.done / imageUploadProgress.total) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="ie-btn ie-btn-large ie-bulk-image-upload-btn"
+          disabled={imageUploading || selectedImages.length === 0 || !slugifyFolderName(imageFolderName)}
+          onClick={handleBulkImageUpload}
+        >
+          {imageUploading ? (
+            <>
+              <Loader2 size={18} className="ie-spinner" />
+              Uploading Images…
+            </>
+          ) : (
+            <>
+              <Upload size={18} />
+              Upload {selectedImages.length > 0 ? `${selectedImages.length} ` : ''}Product Image{selectedImages.length === 1 ? '' : 's'}
+            </>
+          )}
+        </button>
+
+        {imageUploadResult && (
+          <div className="ie-image-result-panel">
+            <div className="ie-image-result-head">
+              <CheckCircle2 size={20} />
+              <div>
+                <strong>Bulk image upload result</strong>
+                <span>
+                  Every valid file is saved first. Exact ERP WebImage matches are then linked to products; unmatched files stay in this supplier folder for review.
+                </span>
+              </div>
+            </div>
+
+            <div className="ie-image-storage-path">
+              <FolderOpen size={17} />
+              <span>Saved in <code>{imageUploadResult.public_folder || `/products/${imageUploadResult.folder_slug || ''}/`}</code></span>
+            </div>
+
+            <div className="ie-report-metrics image-metrics">
+              <div><span>Files saved in folder</span><strong>{imageUploadResult.uploaded_files || 0}</strong></div>
+              <div><span>WebImage-matched files</span><strong>{imageUploadResult.matched_files || 0}</strong></div>
+              <div><span>Matched products</span><strong>{imageUploadResult.matched_products || 0}</strong></div>
+              <div><span>Primary images set</span><strong>{imageUploadResult.primary_links_set || 0}</strong></div>
+              <div><span>Replaced image files</span><strong>{imageUploadResult.replaced_files || 0}</strong></div>
+              <div><span>Unmatched filenames</span><strong>{imageUploadResult.unmatched_file_count || 0}</strong></div>
+            </div>
+
+            {(imageUploadResult.unmatched_file_count || 0) > 0 && (
+              <div className="ie-image-result-list warning">
+                <strong>
+                  Uploaded but not matched to a current product ({imageUploadResult.unmatched_file_count})
+                </strong>
+                <p>{imageUploadResult.unmatched_files.slice(0, 20).join(', ')}</p>
+                {(imageUploadResult.unmatched_file_count || 0) > 20 && (
+                  <small>+{(imageUploadResult.unmatched_file_count || 0) - 20} more unmatched files</small>
+                )}
+                <button type="button" className="ie-download-report-btn secondary" onClick={downloadUnmatchedUploadList}>
+                  <Download size={16} /> Download unmatched upload list (.csv)
+                </button>
+              </div>
+            )}
+
+            {(imageUploadResult.failed_file_count || 0) > 0 && (
+              <div className="ie-image-result-list error">
+                <strong>Failed files ({imageUploadResult.failed_file_count})</strong>
+                {imageUploadResult.failed_files.slice(0, 12).map((item, index) => (
+                  <p key={`${item.file}-${index}`}>
+                    <span>{item.file}</span> — {item.message}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {imageAudit && (
+              <div className={`ie-missing-image-audit ${(imageAudit.missing_product_count || 0) > 0 ? 'has-missing' : 'complete'}`}>
+                <div className="ie-missing-image-audit-head">
+                  <div>
+                    <strong>Missing product image check</strong>
+                    <span>{imageAudit.message}</span>
+                  </div>
+                  {(imageAudit.missing_product_count || 0) > 0 && (
+                    <button type="button" className="ie-download-report-btn" onClick={downloadMissingImageList}>
+                      <Download size={16} /> Download Missing Image List (.csv)
+                    </button>
+                  )}
+                </div>
+
+                <div className="ie-report-metrics missing-image-metrics">
+                  <div><span>Supplier indexes</span><strong>{(imageAudit.supplier_indexes || []).join(', ') || '—'}</strong></div>
+                  <div><span>Expected products</span><strong>{imageAudit.expected_product_count || 0}</strong></div>
+                  <div><span>Unique expected images</span><strong>{imageAudit.expected_unique_image_count || 0}</strong></div>
+                  <div><span>Files in supplier folder</span><strong>{imageAudit.folder_file_count || 0}</strong></div>
+                  <div><span>Products missing images</span><strong>{imageAudit.missing_product_count || 0}</strong></div>
+                  <div><span>Unique missing files</span><strong>{imageAudit.missing_unique_image_count || 0}</strong></div>
+                </div>
+
+                {(imageAudit.missing_product_count || 0) > 0 && (
+                  <div className="ie-missing-preview">
+                    {(imageAudit.missing_products || []).slice(0, 8).map((item, index) => (
+                      <div key={`${item.navsa_product_code}-${item.web_image}-${index}`}>
+                        <code>{item.web_image}</code>
+                        <span>{item.navsa_product_code} — {item.description}</span>
+                      </div>
+                    ))}
+                    {(imageAudit.missing_product_count || 0) > 8 && (
+                      <small>+{(imageAudit.missing_product_count || 0) - 8} more product rows in the downloadable CSV.</small>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

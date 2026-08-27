@@ -116,6 +116,8 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
 
     // Products CRUD + stock + delete + ERP import
     Route::post('/import-erp',                     [AdminController::class, 'importErpProducts'])->middleware('can:products.import-erp');
+    Route::post('/product-images/bulk',            [AdminController::class, 'bulkUploadProductImages'])->middleware('can:products.import-erp');
+    Route::post('/product-images/audit',           [AdminController::class, 'auditBulkProductImages'])->middleware('can:products.import-erp');
     Route::get('/products',                        [AdminController::class, 'products'])->middleware('can:products.view');
     Route::get('/vat-codes',                       [AdminController::class, 'vatCodes'])->middleware('can:products.view');
     Route::post('/products',                       [AdminController::class, 'createProduct'])->middleware('can:products.create');
@@ -209,8 +211,13 @@ Route::prefix('admin')->middleware(['admin.auth'])->group(function () {
 
     // Orders Management
     Route::get('/orders',                          [AdminController::class, 'orders']);
-    Route::get('/orders/{id}',                     [AdminController::class, 'showOrder']);
-    Route::patch('/orders/{id}/status',            [AdminController::class, 'updateOrderStatus']);
+    Route::patch('/orders/bulk-status',             [AdminController::class, 'bulkUpdateOrderStatus']);
+    Route::patch('/orders/bulk-soft-delete',        [AdminController::class, 'bulkSoftDeleteOrders']);
+    Route::patch('/orders/bulk-restore',            [AdminController::class, 'bulkRestoreOrders']);
+    Route::patch('/orders/{id}/soft-delete',        [AdminController::class, 'softDeleteOrder']);
+    Route::patch('/orders/{id}/restore',            [AdminController::class, 'restoreOrder']);
+    Route::get('/orders/{id}',                      [AdminController::class, 'showOrder']);
+    Route::patch('/orders/{id}/status',             [AdminController::class, 'updateOrderStatus']);
 
     // Data Import & Export
     Route::get('/export/products',                 [AdminController::class, 'exportProducts']);

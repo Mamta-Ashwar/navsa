@@ -17,9 +17,20 @@ class Order extends Model
         'total_items',
         'total_weight_kg',
         'total_volume_m3',
+        'customer_country',
+        'vat_applied',
+        'subtotal',
+        'vat_total',
+        'grand_total',
+        'deleted',
         'shipping_method',
         'shipping_address',
         'notes',
+    ];
+
+    protected $casts = [
+        'vat_applied' => 'boolean',
+        'deleted' => 'boolean',
     ];
 
     public function user()

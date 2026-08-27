@@ -29,18 +29,26 @@ export default function AdminReports() {
     setLoading(true);
     setError(null);
     try {
-      const res = await getOrders({ status: 'completed', per_page: 500 });
-      let orderList = res.orders?.data || res.orders || (Array.isArray(res) ? res : []);
+      const allCompletedOrders = [];
+      let page = 1;
+      let lastPage = 1;
 
-      if (!orderList || orderList.length === 0) {
-        const allRes = await getOrders({ per_page: 500 });
-        const allOrders = allRes.orders?.data || allRes.orders || (Array.isArray(allRes) ? allRes : []);
-        orderList = allOrders.filter(
-          (o) => (o.status || '').toLowerCase() === 'completed' || (o.status || '').toLowerCase() === 'delivered'
+      do {
+        const res = await getOrders({ status: 'completed', per_page: 100, page });
+        const payload = res.orders;
+        const pageOrders = payload?.data || payload || (Array.isArray(res) ? res : []);
+
+        allCompletedOrders.push(
+          ...(pageOrders || []).filter((order) =>
+            (order.status || '').toLowerCase() === 'completed'
+          )
         );
-      }
 
-      setOrders(orderList);
+        lastPage = payload?.last_page || 1;
+        page += 1;
+      } while (page <= lastPage);
+
+      setOrders(allCompletedOrders);
     } catch (err) {
       console.error(err);
       setError(err.message || 'Error loading completed order reports.');
@@ -77,8 +85,8 @@ export default function AdminReports() {
     const orderNum = (order.order_number || '').toLowerCase();
     const hasMatchingProduct = (order.items || []).some(
       (item) =>
-        (item.product?.name || '').toLowerCase().includes(q) ||
-        (item.product?.navsa_product_code || item.product?.reference || '').toLowerCase().includes(q)
+        (item.product_name || item.product?.description || item.product?.name || '').toLowerCase().includes(q) ||
+        (item.navsa_product_code || item.product?.navsa_product_code || item.product?.reference || '').toLowerCase().includes(q)
     );
 
     return (
@@ -116,9 +124,9 @@ export default function AdminReports() {
 
       // Product Aggregation
       const pId = item.product_id || item.product?.id || item.id;
-      const pName = item.product?.name || item.name || 'Catalogue Product';
+      const pName = item.product_name || item.product?.description || item.product?.name || item.name || 'Catalogue Product';
       const pCode =
-        item.product?.navsa_product_code || item.product?.reference || 'N/A';
+        item.navsa_product_code || item.product?.navsa_product_code || item.product?.reference || 'N/A';
 
       if (!productAggMap[pId]) {
         productAggMap[pId] = {
@@ -134,11 +142,8 @@ export default function AdminReports() {
       productAggMap[pId].totalRevenue += sub;
     });
 
-    const finalOrderAmt =
-      parseFloat(order.total_amount || 0) > 0
-        ? parseFloat(order.total_amount)
-        : orderSub;
-    totalRevenue += finalOrderAmt;
+    const storedNet = parseFloat(order.subtotal || 0);
+    totalRevenue += storedNet > 0 ? storedNet : orderSub;
   });
 
   const productAggList = Object.values(productAggMap).sort(
@@ -155,7 +160,7 @@ export default function AdminReports() {
 
   const handleExportCSV = () => {
     let csvContent = 'data:text/csv;charset=utf-8,';
-    csvContent += 'Order Number,Customer Name,Email,Date,Product Code,Product Name,Cases Qty,Unit Price (£),Subtotal (£)\n';
+    csvContent += 'Order Number,Customer Name,Email,Date,Product Code,Product Name,Cases Qty,Unit Price (£),Net Subtotal (£),VAT Code,VAT Rate (%),VAT Amount (£),Line Total (£)\n';
 
     filteredOrders.forEach((order) => {
       const dateStr = order.created_at
@@ -163,26 +168,27 @@ export default function AdminReports() {
         : 'N/A';
       const custName = `"${(order.user?.name || order.user?.company_name || 'Guest').replace(/"/g, '""')}"`;
       const custEmail = `"${(order.user?.email || '').replace(/"/g, '""')}"`;
+      const isUK = Boolean(order.vat_applied);
 
       (order.items || []).forEach((item) => {
-        const pCode = `"${(item.product?.navsa_product_code || item.product?.reference || '').replace(/"/g, '""')}"`;
-        const pName = `"${(item.product?.name || item.name || '').replace(/"/g, '""')}"`;
-        const price = parseFloat(item.unit_price || 0).toFixed(2);
-        let cases = parseInt(item.case_quantity || item.quantity || 1);
-        let sub = parseFloat(item.subtotal || 0);
-        if (!sub || sub <= 0) sub = price * cases;
+        const pCode = `"${(item.navsa_product_code || item.product?.navsa_product_code || item.product?.reference || '').replace(/"/g, '""')}"`;
+        const pName = `"${(item.product_name || item.product?.description || item.product?.name || item.name || '').replace(/"/g, '""')}"`;
+        const price = Number(item.unit_price || 0);
+        const cases = Number(item.case_quantity || item.quantity || 1);
+        const net = Number(item.subtotal || price * cases);
+        const vatCode = isUK ? (item.vat_code || '') : '';
+        const vatRate = isUK ? Number(item.vat_rate || 0) : '';
+        const vatAmount = isUK ? Number(item.vat_amount || 0) : '';
+        const lineTotal = isUK ? Number(item.line_total || net + Number(item.vat_amount || 0)) : net;
 
-        csvContent += `${order.order_number},${custName},${custEmail},${dateStr},${pCode},${pName},${cases},${price},${sub.toFixed(2)}\n`;
+        csvContent += `${order.order_number},${custName},${custEmail},${dateStr},${pCode},${pName},${cases},${price.toFixed(2)},${net.toFixed(2)},${vatCode},${vatRate === '' ? '' : vatRate.toFixed(3)},${vatAmount === '' ? '' : vatAmount.toFixed(2)},${lineTotal.toFixed(2)}\n`;
       });
     });
 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute(
-      'download',
-      `completed_orders_report_${new Date().toISOString().slice(0, 10)}.csv`
-    );
+    link.setAttribute('download', `completed_orders_report_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -217,7 +223,7 @@ export default function AdminReports() {
             Completed Orders & Stock Report
           </h1>
           <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>
-            Comprehensive list of all fulfilled trade orders, product case quantities, and stock price breakdowns.
+            Comprehensive list of completed trade orders, product case quantities, VAT snapshots and stock price breakdowns.
           </p>
         </div>
 
@@ -505,7 +511,7 @@ export default function AdminReports() {
           <FileText size={36} style={{ marginBottom: '12px', opacity: 0.5 }} />
           <div style={{ fontSize: '16px', fontWeight: 600, color: '#cbd5e1' }}>No completed orders found</div>
           <p style={{ fontSize: '13px', margin: '4px 0 0' }}>
-            When an order status is marked as 'completed' or 'delivered', it will automatically appear in this report.
+            When an order status is marked as 'completed', it will automatically appear in this report.
           </p>
         </div>
       ) : activeTab === 'orders' ? (
@@ -551,20 +557,18 @@ export default function AdminReports() {
                 computedCases: cases,
                 computedUnitPrice: price,
                 computedSubtotal: sub,
+                computedVatRate: Number(item.vat_rate || 0),
+                computedVatAmount: Number(item.vat_amount || 0),
+                computedLineTotal: Number(item.line_total || 0) > 0 ? Number(item.line_total) : sub + Number(item.vat_amount || 0),
               };
-            });
-
-            // VAT calculation
-            const countryStr = (
-              order.shipping_country ||
-              order.user?.customerDetail?.country ||
-              order.user?.country ||
-              ''
-            ).toLowerCase();
-
-            const isUK = /\b(uk|united kingdom|gb|gbr|england|scotland|wales|great britain)\b/i.test(countryStr);
-            const vatAmount = isUK ? orderSubtotal * 0.2 : 0;
-            const grandTotal = orderSubtotal + vatAmount;
+            });            const registeredCountry = order.customer_country || order.user?.customer_detail?.country || order.user?.country || '';
+            const isUK = Boolean(order.vat_applied) || /^(uk|u k|united kingdom|great britain|gb|gbr)$/i.test(String(registeredCountry).trim());
+            const storedNet = Number(order.subtotal || 0);
+            if (storedNet > 0) orderSubtotal = storedNet;
+            const vatAmount = isUK ? Number(order.vat_total || items.reduce((sum, item) => sum + Number(item.vat_amount || 0), 0)) : 0;
+            const grandTotal = Number(order.grand_total || order.total_amount || 0) > 0
+              ? Number(order.grand_total || order.total_amount)
+              : orderSubtotal + vatAmount;
 
             return (
               <div
@@ -683,7 +687,9 @@ export default function AdminReports() {
                             <th style={{ padding: '10px 12px' }}>Product Description</th>
                             <th style={{ padding: '10px 12px', textAlign: 'center' }}>Stock / Cases Sold</th>
                             <th style={{ padding: '10px 12px', textAlign: 'right' }}>Price per Case</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Subtotal</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Net</th>
+                            {isUK && <th style={{ padding: '10px 12px', textAlign: 'right' }}>VAT</th>}
+                            {isUK && <th style={{ padding: '10px 12px', textAlign: 'right' }}>Line Total</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -694,10 +700,10 @@ export default function AdminReports() {
                             >
                               <td style={{ padding: '10px 12px', color: '#64748b' }}>{iIndex + 1}</td>
                               <td style={{ padding: '10px 12px', fontWeight: 600, color: '#38bdf8' }}>
-                                {item.product?.navsa_product_code || item.product?.reference || 'N/A'}
+                                {item.navsa_product_code || item.product?.navsa_product_code || item.product?.reference || 'N/A'}
                               </td>
                               <td style={{ padding: '10px 12px', color: '#f8fafc', fontWeight: 500 }}>
-                                {item.product?.name || item.name || 'Catalogue Product'}
+                                {item.product_name || item.product?.description || item.product?.name || item.name || 'Catalogue Product'}
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700, color: '#fbbf24' }}>
                                 {item.computedCases} Cases
@@ -708,6 +714,16 @@ export default function AdminReports() {
                               <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>
                                 £{item.computedSubtotal.toFixed(2)}
                               </td>
+                              {isUK && (
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fbbf24' }}>
+                                  {item.computedVatRate.toFixed(3).replace(/\.?0+$/, '')}% · £{item.computedVatAmount.toFixed(2)}
+                                </td>
+                              )}
+                              {isUK && (
+                                <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#fff' }}>
+                                  £{item.computedLineTotal.toFixed(2)}
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -733,12 +749,14 @@ export default function AdminReports() {
                           £{orderSubtotal.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </strong>
                       </div>
-                      <div style={{ color: '#94a3b8' }}>
-                        VAT Tax ({isUK ? '20% UK' : '0% Non-UK'}):{' '}
-                        <strong style={{ color: '#e2e8f0' }}>
-                          £{vatAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </strong>
-                      </div>
+                      {isUK && (
+                        <div style={{ color: '#94a3b8' }}>
+                          VAT Total:{' '}
+                          <strong style={{ color: '#e2e8f0' }}>
+                            £{vatAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </strong>
+                        </div>
+                      )}
                       <div style={{ fontSize: '15px', color: '#34d399', fontWeight: 800 }}>
                         Order Total:{' '}
                         <span>

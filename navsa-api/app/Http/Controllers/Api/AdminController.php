@@ -52,6 +52,34 @@ class AdminController extends Controller
         return rtrim($directory, "\\/");
     }
 
+    /**
+     * Turn the admin-entered supplier folder label into a safe relative folder
+     * name. Examples: "Mars" -> "mars", "Mars UK" -> "mars-uk".
+     */
+    private function normaliseProductImageFolderName(string $folderName): string
+    {
+        $slug = Str::slug(trim($folderName), '-');
+
+        if ($slug === '') {
+            abort(422, 'Please enter a valid supplier image folder name.');
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Build a browser-safe /products/... URL while preserving nested supplier
+     * folders. rawurlencode() cannot be used on the whole path because it would
+     * encode the slash between the folder and filename.
+     */
+    private function productImageUrl(string $imageName): string
+    {
+        $normalised = str_replace('\\', '/', trim($imageName));
+        $segments = array_values(array_filter(explode('/', $normalised), fn ($part) => $part !== ''));
+
+        return '/products/' . implode('/', array_map('rawurlencode', $segments));
+    }
+
     private function imageMetadataForProduct(Product $product): array
     {
         $manualImages = DB::table('product_images')
@@ -75,7 +103,7 @@ class AdminController extends Controller
                     'image_name' => $image->image_name,
                     'is_primary' => (bool) $image->is_primary,
                     'created_at' => $image->created_at,
-                    'image_url' => '/products/' . rawurlencode((string) $image->image_name),
+                    'image_url' => $this->productImageUrl((string) $image->image_name),
                 ];
             })->values()->all(),
         ];
@@ -113,7 +141,7 @@ class AdminController extends Controller
                     'image_name' => $image->image_name,
                     'is_primary' => (bool) $image->is_primary,
                     'created_at' => $image->created_at,
-                    'image_url' => '/products/' . rawurlencode((string) $image->image_name),
+                    'image_url' => $this->productImageUrl((string) $image->image_name),
                 ];
             })->values()->all());
         }
@@ -422,7 +450,7 @@ class AdminController extends Controller
         $q->orderBy('id', $sortOrder === 'asc' ? 'asc' : 'desc');
 
         $requestedPerPage = (int) $request->get('per_page', 25);
-        $allowedPerPage = [8, 25, 50, 75, 100]; // 8 is used by the Admin live-suggestion dropdown.
+        $allowedPerPage = [8, 25, 50, 75, 100, 1000]; // 8 = live suggestions; 1000 = admin export batching.
         $perPage = in_array($requestedPerPage, $allowedPerPage, true)
             ? $requestedPerPage
             : 25;
@@ -714,6 +742,355 @@ class AdminController extends Controller
             'message' => 'Product image uploaded successfully.',
             'product_id' => $product->id,
         ], $this->imageMetadataForProduct($product)));
+    }
+
+
+    /**
+     * Bulk upload supplier/ERP product images.
+     *
+     * NAVSA ERP image rule: the uploaded filename must exactly match the
+     * product WebImage value imported from the ERP Excel file, including the
+     * extension, for example 5000159470315.png.
+     *
+     * One WebImage filename may legitimately belong to multiple products, so
+     * the same uploaded image can be linked as the selected primary image for
+     * every matching product. BarcodeEAN, EncoreImage, Reference and product
+     * description are never used as fallbacks for this bulk matching.
+     */
+    public function bulkUploadProductImages(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $request->validate([
+            'folder_name' => 'required|string|max:80',
+            'images' => 'required|array|min:1|max:5',
+            'images.*' => 'required|file|image|mimes:jpeg,jpg,png,gif,webp|max:10240',
+        ]);
+
+        $folderSlug = $this->normaliseProductImageFolderName((string) $validated['folder_name']);
+        $baseDirectory = $this->productImageDirectory();
+        $directory = $baseDirectory . DIRECTORY_SEPARATOR . $folderSlug;
+
+        if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) {
+            return response()->json([
+                'message' => "Supplier image folder '{$folderSlug}' could not be created. Check PRODUCT_IMAGE_DIRECTORY and folder permissions.",
+            ], 500);
+        }
+
+        $summary = [
+            'folder_name' => (string) $validated['folder_name'],
+            'folder_slug' => $folderSlug,
+            'public_folder' => '/products/' . $folderSlug . '/',
+            'received' => 0,
+            'uploaded_files' => 0,
+            'replaced_files' => 0,
+            'matched_files' => 0,
+            'matched_products' => 0,
+            'primary_links_set' => 0,
+            'unmatched_file_count' => 0,
+            'failed_file_count' => 0,
+            'unmatched_files' => [],
+            'failed_files' => [],
+            'matched_supplier_indexes' => [],
+        ];
+
+        $supplierIndexSet = [];
+        $files = $request->file('images', []);
+
+        foreach ($files as $file) {
+            $summary['received']++;
+
+            $originalName = basename((string) $file->getClientOriginalName());
+
+            if ($originalName === '' || $originalName === '.' || $originalName === '..') {
+                $summary['failed_file_count']++;
+                if (count($summary['failed_files']) < 100) {
+                    $summary['failed_files'][] = [
+                        'file' => $originalName ?: '(unnamed file)',
+                        'message' => 'Image filename is invalid.',
+                    ];
+                }
+                continue;
+            }
+
+            // IMPORTANT: save every valid supplier image first, even when the
+            // filename has no current ERP WebImage match. This keeps the
+            // supplier folder complete and lets the admin download/review the
+            // unmatched list without losing the original supplied files.
+            $relativeFilename = $folderSlug . '/' . $originalName;
+            $targetPath = $directory . DIRECTORY_SEPARATOR . $originalName;
+
+            try {
+                if (is_file($targetPath)) {
+                    if (!@unlink($targetPath)) {
+                        throw new \RuntimeException('Existing image could not be replaced. Check folder permissions.');
+                    }
+                    $summary['replaced_files']++;
+                }
+
+                $file->move($directory, $originalName);
+                $summary['uploaded_files']++;
+            } catch (\Throwable $e) {
+                $summary['failed_file_count']++;
+
+                if (count($summary['failed_files']) < 100) {
+                    $summary['failed_files'][] = [
+                        'file' => $originalName,
+                        'message' => 'File could not be saved: ' . $e->getMessage(),
+                    ];
+                }
+
+                \Illuminate\Support\Facades\Log::error(
+                    "Bulk product image save failed for {$folderSlug}/{$originalName}: " . $e->getMessage()
+                );
+                continue;
+            }
+
+            try {
+                // Matching happens AFTER the physical file has been saved.
+                // Match only the exact ERP WebImage filename. BarcodeEAN,
+                // EncoreImage, Reference and description are intentionally not used.
+                $products = Product::query()
+                    ->whereRaw('TRIM(`web_image`) = ?', [$originalName])
+                    ->get(['id', 'web_image', 'primary_supplier_index']);
+
+                if ($products->isEmpty()) {
+                    $summary['unmatched_file_count']++;
+                    if (count($summary['unmatched_files']) < 500) {
+                        $summary['unmatched_files'][] = $originalName;
+                    }
+                    continue;
+                }
+
+                foreach ($products as $product) {
+                    $supplierIndex = trim((string) ($product->primary_supplier_index ?? ''));
+                    if ($supplierIndex !== '') {
+                        $supplierIndexSet[$supplierIndex] = true;
+                    }
+                }
+
+                $summary['matched_files']++;
+                $summary['matched_products'] += $products->count();
+
+                DB::transaction(function () use ($products, $relativeFilename, &$summary) {
+                    foreach ($products as $product) {
+                        DB::table('product_images')
+                            ->where('product_id', $product->id)
+                            ->update(['is_primary' => 0]);
+
+                        $existingLink = DB::table('product_images')
+                            ->where('product_id', $product->id)
+                            ->where('image_name', $relativeFilename)
+                            ->orderByDesc('id')
+                            ->first();
+
+                        if ($existingLink) {
+                            DB::table('product_images')
+                                ->where('id', $existingLink->id)
+                                ->update(['is_primary' => 1]);
+                        } else {
+                            DB::table('product_images')->insert([
+                                'product_id' => $product->id,
+                                'image_name' => $relativeFilename,
+                                'is_primary' => 1,
+                                'created_at' => now(),
+                            ]);
+                        }
+
+                        $summary['primary_links_set']++;
+                    }
+                });
+            } catch (\Throwable $e) {
+                // The file is intentionally kept in the supplier folder even
+                // if database matching/linking fails. It can be repaired later
+                // without asking the supplier for the image again.
+                $summary['failed_file_count']++;
+
+                if (count($summary['failed_files']) < 100) {
+                    $summary['failed_files'][] = [
+                        'file' => $originalName,
+                        'message' => 'File was saved, but product matching/linking failed: ' . $e->getMessage(),
+                    ];
+                }
+
+                \Illuminate\Support\Facades\Log::error(
+                    "Bulk product image linking failed for {$folderSlug}/{$originalName}: " . $e->getMessage()
+                );
+            }
+        }
+
+        $summary['matched_supplier_indexes'] = array_values(array_keys($supplierIndexSet));
+        sort($summary['matched_supplier_indexes']);
+
+        $failedCount = (int) $summary['failed_file_count'];
+        $unmatchedCount = (int) $summary['unmatched_file_count'];
+
+        $summary['success'] = $summary['uploaded_files'] > 0 && $failedCount === 0;
+        $summary['message'] = "Saved {$summary['uploaded_files']} supplier image file(s) to /products/{$folderSlug}/. "
+            . "{$summary['matched_files']} file(s) matched {$summary['matched_products']} product(s). "
+            . "{$unmatchedCount} file(s) were saved but had no exact ERP WebImage match."
+            . ($failedCount > 0 ? " {$failedCount} file(s) had save/link errors." : '');
+
+        return response()->json(
+            $summary,
+            $summary['uploaded_files'] === 0 && $failedCount > 0 ? 422 : 200
+        );
+    }
+
+    /**
+     * Compare a supplier image folder with ERP WebImage values and return the
+     * products whose expected images are missing. The frontend turns this into
+     * a downloadable CSV report.
+     */
+    public function auditBulkProductImages(Request $request)
+    {
+        if (!$this->auth($request)) return $this->deny();
+
+        $validated = $request->validate([
+            'folder_name' => 'required|string|max:80',
+            'supplier_indexes' => 'nullable|array|max:100',
+            'supplier_indexes.*' => 'nullable|string|max:50',
+        ]);
+
+        $folderSlug = $this->normaliseProductImageFolderName((string) $validated['folder_name']);
+        $directory = $this->productImageDirectory() . DIRECTORY_SEPARATOR . $folderSlug;
+
+        $folderFiles = [];
+        if (is_dir($directory)) {
+            foreach (scandir($directory) ?: [] as $entry) {
+                if ($entry === '.' || $entry === '..') continue;
+                $path = $directory . DIRECTORY_SEPARATOR . $entry;
+                if (!is_file($path)) continue;
+                $extension = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+                if (in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+                    $folderFiles[] = $entry;
+                }
+            }
+        }
+        sort($folderFiles, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $supplierIndexes = collect($validated['supplier_indexes'] ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values();
+
+        // If the caller did not supply the supplier scope, derive it from
+        // products already linked to this supplier folder.
+        if ($supplierIndexes->isEmpty()) {
+            $linkedProductIds = DB::table('product_images')
+                ->where('image_name', 'like', $folderSlug . '/%')
+                ->pluck('product_id')
+                ->unique()
+                ->values();
+
+            if ($linkedProductIds->isNotEmpty()) {
+                $supplierIndexes = Product::query()
+                    ->whereIn('id', $linkedProductIds->all())
+                    ->whereNotNull('primary_supplier_index')
+                    ->pluck('primary_supplier_index')
+                    ->map(fn ($value) => trim((string) $value))
+                    ->filter()
+                    ->unique()
+                    ->values();
+            }
+        }
+
+        // Last fallback: detect supplier indexes from the actual filenames in
+        // the folder by matching them to products.web_image.
+        if ($supplierIndexes->isEmpty() && !empty($folderFiles)) {
+            $supplierIndexes = Product::query()
+                ->whereIn('web_image', $folderFiles)
+                ->whereNotNull('primary_supplier_index')
+                ->pluck('primary_supplier_index')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->unique()
+                ->values();
+        }
+
+        if ($supplierIndexes->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'folder_name' => (string) $validated['folder_name'],
+                'folder_slug' => $folderSlug,
+                'public_folder' => '/products/' . $folderSlug . '/',
+                'supplier_indexes' => [],
+                'folder_file_count' => count($folderFiles),
+                'expected_product_count' => 0,
+                'expected_unique_image_count' => 0,
+                'missing_product_count' => 0,
+                'missing_unique_image_count' => 0,
+                'missing_products' => [],
+                'unmatched_folder_file_count' => count($folderFiles),
+                'unmatched_folder_files' => $folderFiles,
+                'message' => 'Supplier scope could not be detected yet. Upload at least one WebImage-matched file or import the supplier Excel in the same session.',
+            ]);
+        }
+
+        $products = Product::query()
+            ->where('deleted', 0)
+            ->whereIn('primary_supplier_index', $supplierIndexes->all())
+            ->whereNotNull('web_image')
+            ->whereRaw("TRIM(`web_image`) <> ''")
+            ->get([
+                'id',
+                'navsa_product_code',
+                'description',
+                'web_image',
+                'primary_supplier_index',
+            ]);
+
+        $folderSet = array_fill_keys($folderFiles, true);
+        $expectedSet = [];
+        $missingProducts = [];
+        $missingUniqueSet = [];
+
+        foreach ($products as $product) {
+            $webImage = trim((string) $product->web_image);
+            if ($webImage === '') continue;
+
+            $expectedSet[$webImage] = true;
+
+            if (!isset($folderSet[$webImage])) {
+                $missingUniqueSet[$webImage] = true;
+                $missingProducts[] = [
+                    'supplier_index' => $product->primary_supplier_index,
+                    'navsa_product_code' => $product->navsa_product_code,
+                    'description' => $product->description,
+                    'web_image' => $webImage,
+                ];
+            }
+        }
+
+        usort($missingProducts, function ($a, $b) {
+            return [$a['supplier_index'], $a['web_image'], $a['navsa_product_code']]
+                <=> [$b['supplier_index'], $b['web_image'], $b['navsa_product_code']];
+        });
+
+        $unmatchedFolderFiles = array_values(array_filter(
+            $folderFiles,
+            fn ($filename) => !isset($expectedSet[$filename])
+        ));
+
+        return response()->json([
+            'success' => true,
+            'folder_name' => (string) $validated['folder_name'],
+            'folder_slug' => $folderSlug,
+            'public_folder' => '/products/' . $folderSlug . '/',
+            'supplier_indexes' => $supplierIndexes->all(),
+            'folder_file_count' => count($folderFiles),
+            'expected_product_count' => $products->count(),
+            'expected_unique_image_count' => count($expectedSet),
+            'missing_product_count' => count($missingProducts),
+            'missing_unique_image_count' => count($missingUniqueSet),
+            'missing_products' => $missingProducts,
+            'unmatched_folder_file_count' => count($unmatchedFolderFiles),
+            'unmatched_folder_files' => $unmatchedFolderFiles,
+            'message' => count($missingProducts) === 0
+                ? 'All expected ERP WebImage files were found in this supplier folder.'
+                : count($missingProducts) . ' product(s) are missing their expected ERP WebImage file.',
+        ]);
     }
 
     public function selectProductImage(Request $request, $id)
@@ -2993,6 +3370,7 @@ class AdminController extends Controller
 
         try {
             $lastException = null;
+            $spreadsheet = null;
 
             // Strategy 1: Try IOFactory::load directly
             try {
@@ -3096,6 +3474,21 @@ class AdminController extends Controller
 
             $total = count($rows);
 
+            if ($total === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The uploaded file contains headers but no product data rows.',
+                    'total' => 0,
+                    'imported' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                    'restored' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'row_errors' => [],
+                ], 422);
+            }
+
             $importedCount = 0;
             $createdCount  = 0;
             $updatedCount  = 0;
@@ -3104,6 +3497,9 @@ class AdminController extends Controller
             $errorCount    = 0;
             $unknownCodes  = [];
             $unknownBrands = [];
+            $unknownSupplierIndexes = [];
+            $encounteredSupplierIndexes = [];
+            $rowErrors = [];
 
             $supplierLookup = Supplier::query()
                 ->whereNotNull('supplier_index')
@@ -3143,6 +3539,38 @@ class AdminController extends Controller
             foreach ($headers as $idx => $h) {
                 $cleanH = strtolower(trim(preg_replace('/\s+/', ' ', (string)$h)));
                 $headerMap[$cleanH] = $idx;
+            }
+
+            // Build a workbook-local ERP brand-code fallback map before the
+            // row import starts. GroupDesc normally looks like:
+            //   CON11TWI101 TWIX
+            //        ^^^^^^ brand code
+            // If a later row contains only CON11TWI101, we can still resolve
+            // TWIX from another row in the SAME workbook without guessing.
+            $brandNameByErpBrandCode = [];
+            $groupDescForBrandIdx = $headerMap['groupdesc'] ?? ($headerMap['group_desc'] ?? null);
+
+            if ($groupDescForBrandIdx !== null) {
+                foreach ($rows as $brandMapRow) {
+                    $rawGroup = preg_replace(
+                        '/\s+/u',
+                        ' ',
+                        trim((string) ($brandMapRow[$groupDescForBrandIdx] ?? ''))
+                    );
+
+                    if ($rawGroup === '' || strlen($rawGroup) < 11) {
+                        continue;
+                    }
+
+                    $erpBrandCode = strtoupper(substr($rawGroup, 5, 6));
+                    $erpBrandName = strlen($rawGroup) > 11
+                        ? trim(substr($rawGroup, 11))
+                        : '';
+
+                    if ($erpBrandCode !== '' && $erpBrandName !== '') {
+                        $brandNameByErpBrandCode[$erpBrandCode] = $erpBrandName;
+                    }
+                }
             }
 
             $mode = strtolower(trim((string) $request->input('mode', 'erp')));
@@ -3443,9 +3871,16 @@ class AdminController extends Controller
 
                         if ($orderQtyAllowed === null) {
                             $errorCount++;
+                            $message = 'Invalid ORDER QTY ALLOWED value. Use blank, DEFAULT, PALLET or CASE.';
+                            if (count($rowErrors) < 50) {
+                                $rowErrors[] = [
+                                    'row' => $rowIndex + 2,
+                                    'code' => $navsaProductCode,
+                                    'message' => $message,
+                                ];
+                            }
                             \Illuminate\Support\Facades\Log::warning(
-                                'ERP/Step 1 import skipped row ' . ($rowIndex + 2)
-                                . ': invalid ORDER QTY ALLOWED value. Use blank, DEFAULT, PALLET or CASE.'
+                                'ERP/Step 1 import skipped row ' . ($rowIndex + 2) . ': ' . $message
                             );
                             continue;
                         }
@@ -3459,10 +3894,16 @@ class AdminController extends Controller
 
                     if ($vatCode !== null && !in_array($vatCode, $validVatCodes, true)) {
                         $errorCount++;
+                        $message = "Unknown/inactive VAT code '{$vatCode}'. Add/activate the code in vat_codes or correct the ERP VatCode value.";
+                        if (count($rowErrors) < 50) {
+                            $rowErrors[] = [
+                                'row' => $rowIndex + 2,
+                                'code' => $navsaProductCode,
+                                'message' => $message,
+                            ];
+                        }
                         \Illuminate\Support\Facades\Log::warning(
-                            'ERP import skipped row ' . ($rowIndex + 2)
-                            . ": unknown/inactive VAT code '{$vatCode}'. "
-                            . 'Add/activate the code in vat_codes or correct the ERP VatCode value.'
+                            'ERP import skipped row ' . ($rowIndex + 2) . ': ' . $message
                         );
                         continue;
                     }
@@ -3482,6 +3923,14 @@ class AdminController extends Controller
                         ? ($supplierLookup[$supplierIndex] ?? null)
                         : null;
 
+                    if ($supplierIndex !== '') {
+                        $encounteredSupplierIndexes[$supplierIndex] = true;
+                    }
+
+                    if ($supplierIndex !== '' && $supplierId === null) {
+                        $unknownSupplierIndexes[$supplierIndex] = ($unknownSupplierIndexes[$supplierIndex] ?? 0) + 1;
+                    }
+
                     $supplierRefIdx = $headerMap['primarysupplierreference'] ?? ($headerMap['supplier_reference'] ?? null);
                     $supplierRef    = $supplierRefIdx !== null ? trim((string) ($row[$supplierRefIdx] ?? '')) : null;
 
@@ -3495,9 +3944,16 @@ class AdminController extends Controller
 
                     if ($rawObsoleteHasValue && $obsolete === null) {
                         $errorCount++;
+                        $message = 'Invalid Obsolete date. Use a valid Excel date or date value.';
+                        if (count($rowErrors) < 50) {
+                            $rowErrors[] = [
+                                'row' => $rowIndex + 2,
+                                'code' => $navsaProductCode,
+                                'message' => $message,
+                            ];
+                        }
                         \Illuminate\Support\Facades\Log::warning(
-                            'ERP import skipped row ' . ($rowIndex + 2)
-                            . ': invalid Obsolete date.'
+                            'ERP import skipped row ' . ($rowIndex + 2) . ': ' . $message
                         );
                         continue;
                     }
@@ -3550,6 +4006,9 @@ class AdminController extends Controller
                     $webLong  = $webLongIdx !== null ? trim((string) ($row[$webLongIdx] ?? '')) : null;
                     $webImage = $webImgIdx !== null ? trim((string) ($row[$webImgIdx] ?? '')) : null;
 
+                    $encoreImgIdx = $headerMap['encoreimage'] ?? ($headerMap['encore_image'] ?? null);
+                    $encoreImage = $encoreImgIdx !== null ? trim((string) ($row[$encoreImgIdx] ?? '')) : null;
+
                     $liveForWebIdx = $headerMap['liveforweb'] ?? ($headerMap['live_for_web'] ?? null);
                     $liveForWeb = $liveForWebIdx !== null
                         ? $this->toBoolean01($row[$liveForWebIdx] ?? 0)
@@ -3559,8 +4018,16 @@ class AdminController extends Controller
                     // Never invent a random/fallback code during import.
                     if ($navsaProductCode === '') {
                         $errorCount++;
+                        $message = 'Missing Reference / NAVSA Product Code.';
+                        if (count($rowErrors) < 50) {
+                            $rowErrors[] = [
+                                'row' => $rowIndex + 2,
+                                'code' => null,
+                                'message' => $message,
+                            ];
+                        }
                         \Illuminate\Support\Facades\Log::warning(
-                            'ERP Import skipped row ' . ($rowIndex + 2) . ': missing Reference / NAVSA Product Code.'
+                            'ERP Import skipped row ' . ($rowIndex + 2) . ': ' . $message
                         );
                         continue;
                     }
@@ -3587,13 +4054,26 @@ class AdminController extends Controller
                     if (!empty($groupDesc)) {
                         $cleanGroup = preg_replace('/\s+/u', ' ', trim($groupDesc));
                         $groupCode  = strtoupper(substr($cleanGroup, 0, 5));
+                        $erpBrandCode = strlen($cleanGroup) >= 11
+                            ? strtoupper(substr($cleanGroup, 5, 6))
+                            : '';
 
                         // GroupDesc is 5-char group code + 6-char brand code + space + brand text.
                         if (strlen($cleanGroup) > 11) {
                             $brandName = trim(substr($cleanGroup, 11));
                         }
 
-                        // Fallback for any unusual ERP row that still follows "code text".
+                        // If this specific row omits the brand text, use the same
+                        // ERP brand code from another row in this workbook.
+                        if (
+                            $brandName === ''
+                            && $erpBrandCode !== ''
+                            && isset($brandNameByErpBrandCode[$erpBrandCode])
+                        ) {
+                            $brandName = $brandNameByErpBrandCode[$erpBrandCode];
+                        }
+
+                        // Final fallback for unusual ERP rows that still follow "code text".
                         if ($brandName === '' && preg_match('/^\S+\s+(.+)$/u', $cleanGroup, $matches)) {
                             $brandName = trim($matches[1]);
                         }
@@ -3696,7 +4176,9 @@ class AdminController extends Controller
                         'web_short_description' => $webShort ?: null,
                         'web_long_description'  => $webLong ?: null,
                         'web_image'             => $webImage ?: null,
+                        'encore_image'          => $encoreImage ?: null,
                         'live_for_web'          => $obsoleteExpired ? 0 : $liveForWeb,
+                        'last_erp_import_at'    => now(),
 
                         // The ERP file may restore an ordinary soft-deleted product,
                         // but a completed Obsolete date always wins.
@@ -3718,10 +4200,6 @@ class AdminController extends Controller
                     if ($obsoleteIdx !== null) {
                         $payload['obsolete'] = $obsolete;
                     }
-                    
-                    $payload['deleted']               = false;
-                    
-
                     if ($isNormalToDatePromoRow && $promotionPrice !== null) {
                         $payload['is_offer'] = 1;
                         if (!empty($priceList)) {
@@ -3745,18 +4223,40 @@ class AdminController extends Controller
                     }
                     $importedCount++;
 
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error("ERP Import row error: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+                } catch (\Throwable $e) {
                     $errorCount++;
+                    $rowNumber = $rowIndex + 2;
+                    $codeForError = isset($navsaProductCode) && $navsaProductCode !== ''
+                        ? $navsaProductCode
+                        : null;
+                    $message = $e->getMessage();
+
+                    if (count($rowErrors) < 50) {
+                        $rowErrors[] = [
+                            'row' => $rowNumber,
+                            'code' => $codeForError,
+                            'message' => $message,
+                        ];
+                    }
+
+                    \Illuminate\Support\Facades\Log::error(
+                        "ERP Import row {$rowNumber} error: {$message} at "
+                        . $e->getFile() . ':' . $e->getLine()
+                    );
                 }
             }
 
             // Final safety pass; already-expired Obsolete dates are moved now.
             Product::expireObsoleteProducts();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'ERP Products imported successfully!',
+            $responsePayload = [
+                'success' => $errorCount === 0,
+                'partial_success' => $importedCount > 0 && $errorCount > 0,
+                'message' => $errorCount === 0
+                    ? 'ERP Products imported successfully!'
+                    : ($importedCount > 0
+                        ? "ERP import completed with {$errorCount} row error(s)."
+                        : 'ERP import failed: no products were imported.'),
                 'total' => $total,
                 'imported' => $importedCount,
                 'created' => $createdCount,
@@ -3764,11 +4264,20 @@ class AdminController extends Controller
                 'restored' => $restoredCount,
                 'skipped' => $skippedCount,
                 'errors' => $errorCount,
+                'row_errors' => $rowErrors,
                 'unknown_group_codes' => $unknownCodes,
-                'unknown_brands' => $unknownBrands
-            ]);
+                'unknown_brands' => $unknownBrands,
+                'unknown_supplier_indexes' => $unknownSupplierIndexes,
+                'supplier_indexes' => array_values(array_keys($encounteredSupplierIndexes)),
+            ];
 
-        } catch (\Exception $e) {
+            if ($importedCount === 0 && $errorCount > 0) {
+                return response()->json($responsePayload, 422);
+            }
+
+            return response()->json($responsePayload);
+
+        } catch (\Throwable $e) {
             return response()->json(['error' => 'Failed to process Excel file: ' . $e->getMessage()], 500);
         } finally {
             if (isset($tempFilePath) && file_exists($tempFilePath)) {
@@ -3941,22 +4450,59 @@ class AdminController extends Controller
         if ($value === null || $value === '') {
             return null;
         }
+
         if ($value instanceof \DateTimeInterface) {
             return $value->format('Y-m-d');
         }
-        $str = trim((string) $value);
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $str)) {
-            return $str;
-        }
+
+        // ERP uses 31-12-9999 as the normal "no expiry / open ended" sentinel.
+        // In Excel this is serial 2958465. PhpSpreadsheet/PHP date helpers can
+        // reject such a far-future serial on some environments, so preserve it
+        // explicitly instead of treating the row as invalid.
         if (is_numeric($value)) {
+            $serial = (float) $value;
+
+            if (abs($serial - 2958465.0) < 0.0001) {
+                return '9999-12-31';
+            }
+
             try {
-                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value)->format('Y-m-d');
-            } catch (\Exception $e) {
-                return null;
+                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($serial)->format('Y-m-d');
+            } catch (\Throwable $e) {
+                // Fallback conversion for valid Excel serials that are outside
+                // PhpSpreadsheet's platform-specific conversion range.
+                try {
+                    $wholeDays = (int) floor($serial);
+                    $base = new \DateTimeImmutable('1899-12-30');
+                    return $base->modify('+' . $wholeDays . ' days')->format('Y-m-d');
+                } catch (\Throwable $ignored) {
+                    return null;
+                }
             }
         }
+
+        $str = trim((string) $value);
+        if ($str === '') {
+            return null;
+        }
+
+        // Preserve the ERP open-ended date in any common textual form.
+        if (preg_match('/^(?:31[-\/]12[-\/]9999|9999[-\/]12[-\/]31)$/', $str)) {
+            return '9999-12-31';
+        }
+
+        // Avoid strtotime() as the only parser: explicit parsing also works for
+        // far-future ERP dates and keeps day/month ordering predictable.
+        foreach (['!Y-m-d', '!Y/m/d', '!d-m-Y', '!d/m/Y'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat($format, $str);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if ($date && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                return $date->format('Y-m-d');
+            }
+        }
+
         $timestamp = strtotime($str);
-        return $timestamp ? date('Y-m-d', $timestamp) : null;
+        return $timestamp !== false ? date('Y-m-d', $timestamp) : null;
     }
 
     public function getRoles()
@@ -4020,7 +4566,11 @@ class AdminController extends Controller
 
     public function orders(Request $request)
     {
-        $query = Order::with(['user.customerDetail', 'items.product'])->orderBy('created_at', 'desc');
+        $showDeleted = $request->boolean('show_deleted');
+
+        $query = Order::with(['user.customerDetail', 'items.product'])
+            ->where('deleted', $showDeleted ? 1 : 0)
+            ->orderBy('created_at', 'desc');
 
         if ($request->filled('search')) {
             $search = trim($request->search);
@@ -4035,28 +4585,30 @@ class AdminController extends Controller
         }
 
         if ($request->filled('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
+            if ($request->status === 'fulfilled') {
+                $query->where('status', 'completed');
+            } else {
+                $query->where('status', $request->status);
+            }
         }
 
-        $perPage = (int) $request->input('per_page', 15);
+        $perPage = max(1, min((int) $request->input('per_page', 15), 100));
         $orders = $query->paginate($perPage);
 
-        $totalRevenue = (float) Order::whereIn('status', ['completed', 'delivered'])
-            ->with('items')
-            ->get()
-            ->sum(function ($order) {
-                $orderTotal = (float) ($order->total_amount ?? 0);
-                if ($orderTotal > 0) {
-                    return $orderTotal;
-                }
-                return (float) $order->items->sum('subtotal');
-            });
+        $activeBase = Order::where('deleted', 0);
+        $completedOrders = Order::where('deleted', 0)->where('status', 'completed')->get();
+        $totalRevenue = (float) $completedOrders->sum(function ($order) {
+            $net = (float) ($order->subtotal ?? 0);
+            if ($net > 0) return $net;
+            return max(0, (float) ($order->total_amount ?? 0) - (float) ($order->vat_total ?? 0));
+        });
 
         $stats = [
-            'total_orders' => Order::count(),
-            'processing_orders' => Order::whereIn('status', ['processing', 'pending'])->count(),
-            'completed_orders' => Order::whereIn('status', ['completed', 'delivered'])->count(),
+            'total_orders' => (clone $activeBase)->count(),
+            'processing_orders' => (clone $activeBase)->where('status', 'processing')->count(),
+            'completed_orders' => (clone $activeBase)->where('status', 'completed')->count(),
             'total_revenue' => $totalRevenue,
+            'deleted_orders' => Order::where('deleted', 1)->count(),
         ];
 
         return response()->json([
@@ -4073,16 +4625,90 @@ class AdminController extends Controller
 
     public function updateOrderStatus(Request $request, $id)
     {
-        $order = Order::findOrFail($id);
+        $order = Order::where('deleted', 0)->findOrFail($id);
         $validated = $request->validate([
-            'status' => 'required|string',
+            'status' => ['required', 'string', Rule::in(['pending', 'processing', 'completed', 'cancelled'])],
         ]);
         $order->status = $validated['status'];
         $order->save();
 
         return response()->json([
             'message' => 'Order status updated successfully',
-            'order' => $order->load(['user', 'items.product']),
+            'order' => $order->load(['user.customerDetail', 'items.product']),
+        ]);
+    }
+
+    public function bulkUpdateOrderStatus(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:orders,id',
+            'status' => ['required', 'string', Rule::in(['pending', 'processing', 'completed', 'cancelled'])],
+        ]);
+
+        $updated = Order::whereIn('id', $validated['ids'])
+            ->where('deleted', 0)
+            ->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'message' => $updated . ' order(s) updated successfully',
+            'updated_count' => $updated,
+            'status' => $validated['status'],
+        ]);
+    }
+
+    public function softDeleteOrder($id)
+    {
+        $order = Order::where('deleted', 0)->findOrFail($id);
+        $order->deleted = 1;
+        $order->save();
+
+        return response()->json(['message' => 'Order moved to Deleted successfully.']);
+    }
+
+    public function restoreOrder($id)
+    {
+        $order = Order::where('deleted', 1)->findOrFail($id);
+        $order->deleted = 0;
+        $order->save();
+
+        return response()->json([
+            'message' => 'Order restored successfully.',
+            'order' => $order->load(['user.customerDetail', 'items.product']),
+        ]);
+    }
+
+    public function bulkSoftDeleteOrders(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:orders,id',
+        ]);
+
+        $updated = Order::whereIn('id', $validated['ids'])
+            ->where('deleted', 0)
+            ->update(['deleted' => 1]);
+
+        return response()->json([
+            'message' => $updated . ' order(s) moved to Deleted.',
+            'updated_count' => $updated,
+        ]);
+    }
+
+    public function bulkRestoreOrders(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:orders,id',
+        ]);
+
+        $updated = Order::whereIn('id', $validated['ids'])
+            ->where('deleted', 1)
+            ->update(['deleted' => 0]);
+
+        return response()->json([
+            'message' => $updated . ' order(s) restored successfully.',
+            'updated_count' => $updated,
         ]);
     }
 

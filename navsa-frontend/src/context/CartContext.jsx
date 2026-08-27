@@ -110,6 +110,11 @@ function mergeCurrentProductIntoBasketItem(item, product) {
     weight: product.weight ?? item.weight,
     volume: product.volume ?? item.volume,
     storage_type: product.storage_type ?? item.storage_type ?? 'Ambient',
+    vat_code: product.vat_code ?? item.vat_code ?? null,
+    vat_rate: Number(product.vat_rate ?? item.vat_rate ?? 0),
+    vat_description: product.vat_description ?? item.vat_description ?? null,
+    vat_treatment: product.vat_treatment ?? item.vat_treatment ?? null,
+    vat_charge_for_uk: product.vat_charge_for_uk ?? item.vat_charge_for_uk ?? false,
   }
 
   const quantities = sanitizeOrderQuantities(currentItem, {
@@ -153,6 +158,11 @@ function mergeCurrentProductIntoWishlistItem(item, product) {
     storage_type: product.storage_type ?? item.storage_type,
     barcode_ean: product.barcode_ean ?? item.barcode_ean,
     category: product.category ?? item.category,
+    vat_code: product.vat_code ?? item.vat_code ?? null,
+    vat_rate: Number(product.vat_rate ?? item.vat_rate ?? 0),
+    vat_description: product.vat_description ?? item.vat_description ?? null,
+    vat_treatment: product.vat_treatment ?? item.vat_treatment ?? null,
+    vat_charge_for_uk: product.vat_charge_for_uk ?? item.vat_charge_for_uk ?? false,
   }
 }
 
@@ -313,6 +323,12 @@ export function CartProvider({ children }) {
             order_qty_allowed: orderQtyAllowed,
             layer_quantity: product.layer_quantity ?? item.layer_quantity,
             pallet_quantity: product.pallet_quantity ?? item.pallet_quantity,
+            navsa_product_code: product.navsa_product_code ?? item.navsa_product_code,
+            vat_code: product.vat_code ?? item.vat_code ?? null,
+            vat_rate: Number(product.vat_rate ?? item.vat_rate ?? 0),
+            vat_description: product.vat_description ?? item.vat_description ?? null,
+            vat_treatment: product.vat_treatment ?? item.vat_treatment ?? null,
+            vat_charge_for_uk: product.vat_charge_for_uk ?? item.vat_charge_for_uk ?? false,
             ...combined,
             totalCases: calcCases(
               productWithRule,
@@ -332,7 +348,8 @@ export function CartProvider({ children }) {
           brand: product.brand?.brand_name || '',
           web_image: product.web_image || '',
           price: product.price || 0,
-          reference: product.reference,
+          reference: product.reference ?? product.navsa_product_code,
+          navsa_product_code: product.navsa_product_code,
           order_qty_allowed: orderQtyAllowed,
 
           layer_quantity: product.layer_quantity || 0,
@@ -343,6 +360,11 @@ export function CartProvider({ children }) {
           weight: product.weight || 0,
           volume: product.volume || 0,
           storage_type: product.storage_type || 'Ambient',
+          vat_code: product.vat_code ?? null,
+          vat_rate: Number(product.vat_rate || 0),
+          vat_description: product.vat_description ?? null,
+          vat_treatment: product.vat_treatment ?? null,
+          vat_charge_for_uk: Boolean(product.vat_charge_for_uk),
 
           ...incoming,
           totalCases,
@@ -453,6 +475,9 @@ export function CartProvider({ children }) {
           brand_name: item.brand_name || '',
           storage_type: item.storage_type || 'Ambient',
           units_of: item.units_per_case || item.units_of || 1,
+          vat_code: item.vat_code ?? null,
+          vat_rate: Number(item.vat_rate || 0),
+          vat_charge_for_uk: Boolean(item.vat_charge_for_uk),
         },
         { caseQty: Math.max(1, Number(item.case_quantity || item.quantity || 1)) }
       )
@@ -485,6 +510,11 @@ export function CartProvider({ children }) {
           weight: product.weight || 0,
           volume: product.volume || 0,
           storage_type: product.storage_type || 'Ambient',
+          vat_code: product.vat_code ?? null,
+          vat_rate: Number(product.vat_rate || 0),
+          vat_description: product.vat_description ?? null,
+          vat_treatment: product.vat_treatment ?? null,
+          vat_charge_for_uk: Boolean(product.vat_charge_for_uk),
         },
       ]
     })
