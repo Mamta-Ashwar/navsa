@@ -81,21 +81,34 @@ function getCardBannerConfig(product, customBadge) {
   } else if (rawList.includes('PRESELL')) {
     type = 'PRESELL'
     title = 'Presell'
-    bg = '#6366f1'
+    bg = '#e04545'
     showStartDate = true // Show Start Date badge for Presell!
   } else if (rawList.includes('MONTHLY') || rawList.includes('MONTHLY PROMOTION')) {
     type = 'MONTHLY'
     title = 'Monthly Promotion'
     bg = '#00b4d8'
     showEndDate = true
+  } else if (rawList.includes('WEEKLY')) {
+    type = 'WEEKLY'
+    title = 'Weekly Deals'
+    bg = '#f59e0b'
+    showEndDate = true
+  } else if (rawList.includes('SEASONAL')) {
+    type = 'SEASONAL'
+    title = 'Seasonal Offers'
+    bg = '#00bc8c'
   } else if (rawList.includes('CLEARANCE')) {
     type = 'CLEARANCE'
     title = 'Clearance'
-    bg = '#ea580c'
+    bg = '#ec4899'
+  } else if (rawList.includes('LATEST')) {
+    type = 'LATEST'
+    title = 'Latest Deals'
+    bg = '#475569'
   } else if (rawList.includes('NEW') || product?.is_new_arrival) {
     type = 'NEW'
-    title = 'New Arrival'
-    bg = '#2563eb'
+    title = 'New'
+    bg = '#d97706'
   }
   // Best Seller and WIGIG have NO top banner (title stays '')
 

@@ -5,6 +5,7 @@ import { useShipping } from '../context/ShippingContext'
 import { useCurrency } from '../utils/currency'
 import { useAuth } from '../context/AuthContext'
 import ConfirmModal from '../components/common/ConfirmModal'
+import OrderSuccessModal from '../components/OrderSuccessModal'
 import ShippingSelector from '../components/ShippingSelector'
 import { getCountries } from '../services/shippingService'
 import { getOrderQuantityPermissions } from '../utils/orderQuantity'
@@ -39,6 +40,7 @@ function Basket() {
   const [showShippingEditor, setShowShippingEditor] = useState(false)
   const [resolvedCountry, setResolvedCountry] = useState(null)
   const [submittingOrder, setSubmittingOrder] = useState(false)
+  const [orderSuccessData, setOrderSuccessData] = useState(null)
   const { formatPrice: money } = useCurrency()
 
   const {
@@ -85,6 +87,9 @@ function Basket() {
         headers['Authorization'] = `Bearer ${token}`
       }
 
+      const shippingMethodName = isCollection ? 'Collection (EXW)' : (selectedContainer?.container_name || 'Freight Delivery')
+      const shippingAddressVal = isCollection ? 'EXW Central Warehouse' : `${selectedCountry?.country_name || ''} - ${selectedPort?.port_name || ''}`
+
       const response = await fetch(`${BASE}/orders`, {
         method: 'POST',
         headers,
@@ -92,8 +97,8 @@ function Basket() {
           user_id: user.id,
           items: itemsPayload,
           total_amount: basketTotal,
-          shipping_method: isCollection ? 'Collection (EXW)' : (selectedContainer?.container_name || 'Freight Delivery'),
-          shipping_address: isCollection ? 'EXW Central Warehouse' : `${selectedCountry?.country_name || ''} - ${selectedPort?.port_name || ''}`,
+          shipping_method: shippingMethodName,
+          shipping_address: shippingAddressVal,
         }),
       })
 
@@ -103,9 +108,15 @@ function Basket() {
         throw new Error(data.message || `Order creation failed (Status ${response.status})`)
       }
 
+      const createdOrder = data.order || {
+        order_number: 'NAV-' + Math.floor(100000 + Math.random() * 900000),
+        total_amount: basketTotal,
+        total_items: itemsPayload.length,
+        shipping_method: shippingMethodName,
+      }
+
       clearBasket()
-      alert('Order placed successfully! Redirecting to your Order History…')
-      navigate('/profile')
+      setOrderSuccessData(createdOrder)
     } catch (err) {
       console.error('Checkout error:', err)
       alert(err.message || 'Unable to place order. Please check your connection and try again.')
@@ -546,6 +557,14 @@ function Basket() {
         onClose={closeBasketRemoval}
         onConfirm={confirmBasketRemoval}
       />
+
+      {orderSuccessData && (
+        <OrderSuccessModal
+          order={orderSuccessData}
+          formatPrice={money}
+          onClose={() => setOrderSuccessData(null)}
+        />
+      )}
     </div>
   )
 }

@@ -131,6 +131,46 @@ class ProductController extends Controller
             $query->where('is_best_offer', $request->is_best_offer);
         }
 
+        if ($request->filled('price_list') || $request->filled('pricelist')) {
+            $priceListParam = trim($request->get('price_list', $request->get('pricelist')));
+            $priceListUpper = strtoupper($priceListParam);
+
+            if ($priceListUpper === 'NEW' || $priceListUpper === 'NEW ARRIVAL') {
+                $query->where(function ($q) {
+                    $q->where('price_list', 'LIKE', '%NEW%')
+                      ->orWhere('is_new_arrival', 1);
+                });
+            } elseif ($priceListUpper === 'EDLP' || $priceListUpper === 'EVERY DAY LOW PRICE') {
+                $query->where(function ($q) {
+                    $q->where('price_list', 'LIKE', '%EDLP%')
+                      ->orWhere('price_list', 'LIKE', '%EVERY DAY%');
+                });
+            } elseif (str_contains($priceListUpper, 'MONTHLY')) {
+                $query->where('price_list', 'LIKE', '%MONTHLY%');
+            } elseif (str_contains($priceListUpper, 'CLEARANCE')) {
+                $query->where('price_list', 'LIKE', '%CLEARANCE%');
+            } elseif (str_contains($priceListUpper, 'PRESELL')) {
+                $query->where('price_list', 'LIKE', '%PRESELL%');
+            } elseif (str_contains($priceListUpper, 'WEEKLY')) {
+                $query->where('price_list', 'LIKE', '%WEEKLY%');
+            } elseif (str_contains($priceListUpper, 'SEASONAL')) {
+                $query->where(function ($q) {
+                    $q->where('price_list', 'LIKE', '%SEASONAL%')
+                      ->orWhereHas('category', function ($c) {
+                          $c->where('category_name', 'LIKE', '%Seasonal%');
+                      });
+                });
+            } elseif (str_contains($priceListUpper, 'LATEST')) {
+                $query->where(function ($q) {
+                    $q->where('price_list', 'LIKE', '%LATEST%')
+                      ->orWhere('is_offer', 1)
+                      ->orWhere('is_best_offer', 1);
+                });
+            } else {
+                $query->where('price_list', 'LIKE', "%{$priceListParam}%");
+            }
+        }
+
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }

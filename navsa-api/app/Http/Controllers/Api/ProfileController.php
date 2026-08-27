@@ -193,6 +193,7 @@ class ProfileController extends Controller
                     'product_name' => $item['product_name'] ?? $item['description'] ?? 'Product',
                     'unit_price' => $unitPrice,
                     'case_quantity' => $cases,
+                    'quantity' => $cases,
                     'units_per_case' => $item['units_per_case'] ?? 1,
                     'subtotal' => $subtotal,
                 ]);

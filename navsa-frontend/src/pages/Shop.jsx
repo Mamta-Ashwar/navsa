@@ -17,6 +17,20 @@ function productImage(product) {
   return getProductImageUrl(product?.web_image)
 }
 
+function getPromotionLabel(filter) {
+  if (!filter) return ''
+  const upper = String(filter).trim().toUpperCase()
+  if (upper === 'EDLP' || upper === 'EVERY DAY LOW PRICE') return 'Every Day Low Price'
+  if (upper === 'PRESELL') return 'Presell'
+  if (upper === 'MONTHLY PROMOTION' || upper === 'MONTHLY') return 'Monthly Promotions'
+  if (upper === 'WEEKLY DEALS' || upper === 'WEEKLY') return 'Weekly Deals'
+  if (upper === 'SEASONAL OFFERS' || upper === 'SEASONAL') return 'Seasonal Offers'
+  if (upper === 'NEW' || upper === 'NEW ARRIVAL') return 'New'
+  if (upper === 'CLEARANCE') return 'Clearance'
+  if (upper === 'LATEST DEALS' || upper === 'LATEST') return 'Latest Deals'
+  return filter
+}
+
 function Shop() {
   const { isAuthenticated, token } = useAuth()
   const [searchParams] = useSearchParams()
@@ -26,6 +40,7 @@ function Shop() {
   const categoryFilter = searchParams.get('category') || ''
   const brandFilter = searchParams.get('brand') || ''
   const offerFilter = searchParams.get('offer') || ''
+  const priceListFilter = searchParams.get('pricelist') || searchParams.get('price_list') || ''
   const urlSearch = searchParams.get('search') || ''
 
   const [products, setProducts] = useState([])
@@ -56,6 +71,7 @@ function Shop() {
       let url = `${BASE}/products?page=${page}`
       if (categoryFilter) url += `&category=${encodeURIComponent(categoryFilter)}`
       if (brandFilter) url += `&brand=${encodeURIComponent(brandFilter)}`
+      if (priceListFilter) url += `&price_list=${encodeURIComponent(priceListFilter)}`
       if (offerFilter === 'daily' || offerFilter === '1') url += `&is_offer=1`
       if (offerFilter === 'new') url += `&is_new_arrival=1`
       if (offerFilter === 'best') url += `&is_best_offer=1`
@@ -103,7 +119,7 @@ function Shop() {
     }
 
     loadProducts(1, urlSearch)
-  }, [isAuthenticated, token, categoryFilter, brandFilter, offerFilter, urlSearch])
+  }, [isAuthenticated, token, categoryFilter, brandFilter, offerFilter, priceListFilter, urlSearch])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -172,6 +188,7 @@ function Shop() {
 
     setShowSuggestions(false)
     navigate(`/shop?${new URLSearchParams({
+      ...(priceListFilter ? { pricelist: priceListFilter } : {}),
       ...(categoryFilter ? { category: categoryFilter } : {}),
       ...(brandFilter ? { brand: brandFilter } : {}),
       search: value,
@@ -197,11 +214,14 @@ function Shop() {
     )
   }
 
+  const activeTitle = getPromotionLabel(priceListFilter) || categoryFilter || brandFilter || (urlSearch ? `Results for “${urlSearch}”` : 'All Products')
+
   return (
     <main className="shop-page">
-      {(categoryFilter || brandFilter || urlSearch) && (
+      {(categoryFilter || brandFilter || priceListFilter || urlSearch) && (
         <section className="shop-filter-strip">
           <div>
+            {priceListFilter && <span>Promotion: <strong>{getPromotionLabel(priceListFilter)}</strong></span>}
             {categoryFilter && <span>Category: <strong>{categoryFilter}</strong></span>}
             {brandFilter && <span>Brand: <strong>{brandFilter}</strong></span>}
             {urlSearch && <span>Search: <strong>{urlSearch}</strong></span>}
@@ -215,7 +235,9 @@ function Shop() {
           <form className="shop-search-box" onSubmit={handleSearch}>
             <input
               type="search"
-              placeholder={categoryFilter
+              placeholder={priceListFilter
+                ? `Search within ${getPromotionLabel(priceListFilter)}...`
+                : categoryFilter
                 ? `Search within ${categoryFilter}...`
                 : 'Search by product, brand, barcode or code...'}
               value={search}
@@ -270,7 +292,7 @@ function Shop() {
                 </>
               ) : (
                 <div className="shop-search-status">
-                  No matching products found{categoryFilter ? ` in ${categoryFilter}` : ''}.
+                  No matching products found{priceListFilter ? ` in ${getPromotionLabel(priceListFilter)}` : categoryFilter ? ` in ${categoryFilter}` : ''}.
                 </div>
               )}
             </div>
@@ -282,7 +304,7 @@ function Shop() {
         <div className="shop-toolbar">
           <div>
             <span className="shop-kicker">PRODUCT DIRECTORY</span>
-            <h1>{categoryFilter || brandFilter || (urlSearch ? `Results for “${urlSearch}”` : 'All Products')}</h1>
+            <h1>{activeTitle}</h1>
           </div>
           <p>Showing <strong>{products.length}</strong> of <strong>{total}</strong> products</p>
         </div>

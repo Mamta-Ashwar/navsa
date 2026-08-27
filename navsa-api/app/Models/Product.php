@@ -222,8 +222,8 @@ class Product extends Model
             return $this->promotion_active ? $priceList : 'STD';
         }
 
-        // WIGIG and NEW remain active unless ERP FromDate / ToDate restrict them.
-        if (in_array($priceList, ['WIGIG', 'NEW'], true)) {
+        // WIGIG, NEW, BEST SELLER remain active unless ERP FromDate / ToDate restrict them.
+        if (in_array($priceList, ['WIGIG', 'NEW', 'NEW ARRIVAL', 'BEST SELLER'], true)) {
             if ($this->from_date !== null || $this->to_date !== null) {
                 return $this->promotion_active ? $priceList : 'STD';
             }
@@ -270,9 +270,12 @@ class Product extends Model
             'EDLP' => 'Every Day Low Price',
             'MONTHLY PROMOTION' => 'Monthly Promotion',
             'CLEARANCE' => 'Clearance',
-            'WIGIG' => 'WIGIG',
-            'NEW' => 'New',
             'PRESELL' => 'Presell',
+            'WEEKLY DEALS', 'WEEKLY' => 'Weekly Deals',
+            'SEASONAL OFFERS', 'SEASONAL DEALS' => 'Seasonal Offers',
+            'LATEST DEALS', 'LATEST DEAL' => 'Latest Deals',
+            'NEW', 'NEW ARRIVAL' => 'New',
+            'WIGIG' => 'WIGIG',
             default => null,
         };
     }
@@ -284,7 +287,7 @@ class Product extends Model
         }
 
         return match ($this->effective_price_list) {
-            'MONTHLY PROMOTION' => $this->to_date
+            'MONTHLY PROMOTION', 'WEEKLY DEALS', 'WEEKLY' => $this->to_date
                 ? [
                     'label' => 'Ends on',
                     'date' => $this->to_date->format('d M Y'),
@@ -365,6 +368,12 @@ class Product extends Model
                 'MONTHLY PROMOTION',
                 'CLEARANCE',
                 'PRESELL',
+                'WEEKLY DEALS',
+                'WEEKLY',
+                'SEASONAL OFFERS',
+                'SEASONAL DEALS',
+                'LATEST DEALS',
+                'LATEST DEAL',
             ],
             true
         );
