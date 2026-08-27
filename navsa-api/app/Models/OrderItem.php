@@ -19,6 +19,7 @@ class OrderItem extends Model
         'unit_price',
         'case_quantity',
         'units_per_case',
+        'quantity',
         'subtotal',
         'vat_code',
         'vat_rate',

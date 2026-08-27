@@ -571,69 +571,69 @@ export default function HeaderMain() {
                 </div>
 
                 <div className="header-main__promo-grid">
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=EDLP"
                     className="header-main__promo-btn promo-edlp"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaTag /> EVERY DAY LOW PRICE
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=PRESELL"
                     className="header-main__promo-btn promo-presell"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaBolt /> PRESELL
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=MONTHLY PROMOTION"
                     className="header-main__promo-btn promo-monthly"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaCalendarAlt /> MONTHLY PROMOTIONS
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=WEEKLY DEALS"
                     className="header-main__promo-btn promo-weekly"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaClock /> WEEKLY DEALS
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=SEASONAL OFFERS"
                     className="header-main__promo-btn promo-seasonal"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaTag /> SEASONAL OFFERS
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=NEW"
                     className="header-main__promo-btn promo-new"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaStar /> NEW
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=CLEARANCE"
                     className="header-main__promo-btn promo-clearance"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaTrashAlt /> CLEARANCE
-                  </button>
+                  </Link>
 
-                  <button
-                    type="button"
+                  <Link
+                    to="/shop?pricelist=LATEST DEALS"
                     className="header-main__promo-btn promo-latest"
-                    onClick={e => e.preventDefault()}
+                    onClick={closeMenus}
                   >
                     <FaFileAlt /> LATEST DEALS
-                  </button>
+                  </Link>
                 </div>
               </div>
             )}

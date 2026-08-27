@@ -429,6 +429,7 @@
   border: none;
   cursor: pointer;
   user-select: none;
+  text-decoration: none;
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
   white-space: nowrap;
 }
